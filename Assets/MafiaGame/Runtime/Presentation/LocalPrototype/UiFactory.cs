@@ -57,5 +57,44 @@ namespace MafiaGame.Presentation.LocalPrototype
 
             return button;
         }
+
+        public static TMP_InputField CreateInputField(Transform parent, string placeholder)
+        {
+            var go = new GameObject("InputField", typeof(RectTransform), typeof(Image));
+            go.transform.SetParent(parent, false);
+            go.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.12f);
+
+            var input = go.AddComponent<TMP_InputField>();
+
+            var textArea = new GameObject("TextArea", typeof(RectTransform), typeof(RectMask2D));
+            textArea.transform.SetParent(go.transform, false);
+            var areaRect = textArea.GetComponent<RectTransform>();
+            areaRect.anchorMin = Vector2.zero;
+            areaRect.anchorMax = Vector2.one;
+            areaRect.offsetMin = new Vector2(12f, 6f);
+            areaRect.offsetMax = new Vector2(-12f, -6f);
+
+            TextMeshProUGUI placeholderText = CreateText(textArea.transform, "Placeholder", 24f, TextAlignmentOptions.Left);
+            StretchLocal(placeholderText.rectTransform);
+            placeholderText.text = placeholder;
+            placeholderText.color = new Color(1f, 1f, 1f, 0.4f);
+
+            TextMeshProUGUI text = CreateText(textArea.transform, "Text", 24f, TextAlignmentOptions.Left);
+            StretchLocal(text.rectTransform);
+
+            input.textViewport = areaRect;
+            input.textComponent = text;
+            input.placeholder = placeholderText;
+            input.characterLimit = 12;
+            return input;
+        }
+
+        private static void StretchLocal(RectTransform rt)
+        {
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
+        }
     }
 }

@@ -53,22 +53,56 @@ Mrežni paketi (NGO + Relay + Lobby + Authentication + Core) su instalirani i pr
 kompajlira. Pre nego što Relay/Lobby kod može da radi, potrebno je povezati UGS projekat.
 Ovo se NE može uraditi iz CLI-ja — traži Unity nalog i Dashboard.
 
-### [ ] 1. Prijava i povezivanje projekta
+### [x] 1. Prijava i povezivanje projekta
 - Otvori Unity, gore desno se prijavi na svoj Unity nalog (ako nisi).
 - `Edit > Project Settings > Services` → izaberi organizaciju i `Create`/`Link` UGS projekat.
 - Očekivano: prikaže se Project ID (i Environment `production`).
 
-### [ ] 2. Uključi servise na Dashboard-u
+### [x] 2. Uključi servise na Dashboard-u
 - Idi na https://dashboard.unity3d.com → izaberi ovaj projekat.
 - Uključi: **Authentication** (Anonymous sign-in), **Relay**, **Lobby**.
 - Free tier je dovoljan za privatne testove.
 
-### [ ] 3. Potvrda
+### [x] 3. Potvrda
 - U `Project Settings > Services` proveri da je projekat „Linked".
 - Odgovori `done` ili mi pošalji tekst greške ako se pojavi.
 
 Napomena: dok ovo ne bude povezano, mrežni kod pišem i unit-testiram bez pozivanja Relay/Lobby-ja
 (kroz apstrakcije); pravi host-join test radimo tek posle povezivanja.
+
+---
+
+## Milestone 3 — lobi scena i test host/join
+
+Mrežni sloj (auth + Relay/Lobby sesija + lobi UI) je napisan i unit-testiran. Za pravi
+host/join test treba scena sa NGO `NetworkManager`-om (Sessions API preko njega diže Relay).
+
+### [ ] 1. Napravi lobi scenu
+- `File > New Scene` (Empty) → sačuvaj kao `Assets/MafiaGame/Content/Scenes/Lobby.unity`.
+
+### [ ] 2. Dodaj NetworkManager sa transportom
+- Hierarchy: `Create Empty`, preimenuj u `NetworkManager`.
+- `Add Component` → `Network Manager` (Netcode for GameObjects).
+- Na isti GameObject: `Add Component` → `Unity Transport`.
+- U `Network Manager` inspektoru, pod `Network Transport`, dodeli tu `Unity Transport`
+  komponentu (obično se sama poveže; ako ne, prevuci je u polje).
+
+### [ ] 3. Dodaj lobi bootstrap
+- `Create Empty`, preimenuj u `LobbyBootstrap`.
+- `Add Component` → `LobbyBootstrap` (namespace `MafiaGame.Presentation.Lobby`).
+- Sačuvaj scenu.
+
+### [ ] 4. Dodaj `Lobby` scenu u Build Settings.
+
+### [ ] 5. Test host/join (dva učesnika)
+- Preporuka: `Window > Multiplayer > Multiplayer Play Mode` → uključi 1 dodatnog virtuelnog
+  igrača (ukupno 2), pa `Play`.
+- U jednom prozoru klikni `Napravi igru (Host)` → prikaže se kod.
+- U drugom prozoru upiši taj kod i klikni `Pridruži se kodom`.
+- Očekivano: oba prozora pokažu listu igrača (2). Ako se pojavi greška, pošalji mi je.
+
+Napomena: ovo je MREŽNI TEMELJ (prijava + sesija + lobi). Sinhronizacija same partije preko
+mreže (tajne uloge po klijentu, autoritativne komande/RPC, faze) je Milestone 4.
 
 ---
 Napomena: prototip je DEV/lokalni test harness — namerno prikazuje sve uloge operateru na

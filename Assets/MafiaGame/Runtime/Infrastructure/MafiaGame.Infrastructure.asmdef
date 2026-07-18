@@ -1,13 +1,12 @@
 {
-    "name": "MafiaGame.Presentation",
-    "rootNamespace": "MafiaGame.Presentation",
+    "name": "MafiaGame.Infrastructure",
+    "rootNamespace": "MafiaGame.Infrastructure",
     "references": [
         "MafiaGame.Application",
         "MafiaGame.Domain",
-        "MafiaGame.Infrastructure",
-        "UnityEngine.UI",
-        "Unity.TextMeshPro",
-        "Unity.InputSystem"
+        "Unity.Services.Core",
+        "Unity.Services.Authentication",
+        "Unity.Services.Multiplayer"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
