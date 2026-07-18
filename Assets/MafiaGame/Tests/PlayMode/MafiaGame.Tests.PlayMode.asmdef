@@ -1,16 +1,14 @@
 {
-    "name": "MafiaGame.Tests.EditMode",
-    "rootNamespace": "MafiaGame.Tests.EditMode",
+    "name": "MafiaGame.Tests.PlayMode",
+    "rootNamespace": "MafiaGame.Tests.PlayMode",
     "references": [
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
-        "MafiaGame.Domain",
+        "MafiaGame.Presentation",
         "MafiaGame.Application",
-        "MafiaGame.Presentation"
+        "MafiaGame.Domain"
     ],
-    "includePlatforms": [
-        "Editor"
-    ],
+    "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": true,
