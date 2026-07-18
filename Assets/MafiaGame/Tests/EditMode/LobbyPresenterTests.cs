@@ -32,6 +32,7 @@ namespace MafiaGame.Tests.EditMode
             Assert.IsTrue(view.IsConnectedShown);
             Assert.IsTrue(view.ShownIsHost);
             Assert.AreEqual("ABC123", view.ShownJoinCode);
+            Assert.IsTrue(string.IsNullOrEmpty(view.LastStatus), "The busy status should be cleared once connected.");
         }
 
         [Test]

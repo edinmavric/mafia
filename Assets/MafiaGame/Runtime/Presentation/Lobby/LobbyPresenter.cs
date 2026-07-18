@@ -70,6 +70,7 @@ namespace MafiaGame.Presentation.Lobby
             {
                 await _ensureSignedIn();
                 await action();
+                _view.ShowStatus(string.Empty);
                 Refresh();
             }
             catch (Exception exception)
