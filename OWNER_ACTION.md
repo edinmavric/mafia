@@ -1,110 +1,80 @@
-# OWNER ACTION — ručni Unity Editor koraci
+# OWNER ACTION — ručni Unity koraci
 
-Ovaj fajl beleži korake koje moram da uradim ja (vlasnik) u Unity Editoru, jer se ne mogu
-bezbedno izvesti iz koda. Kada završiš korak, može se obeležiti `[x]`.
+Koraci koje radiš ti u Unity Editoru. Pisani su što prostije: tačan meni, tačan panel,
+tačno dugme, i šta treba da se desi posle. Kad završiš korak, stavi `[x]`.
 
----
+> Pravilo (uvek): koraci su korak-po-korak, za početnika — gde se klikće, šta se preuzima,
+> i šta se očekuje posle svakog koraka.
 
-## Milestone 2 — pokretanje lokalnog prototipa
-
-Kod, asmdef-ovi i testovi su već napravljeni. PlayMode i EditMode testovi prolaze headless
-(bez ovih koraka). Sledeći koraci su potrebni samo da bi se prototip **igrao** iz Editora.
-
-### [x] 1. Import TextMeshPro resursa (jednom po projektu)
-- Otvori Unity, sačekaj da se projekat kompajlira (bez crvenih grešaka u Console).
-- Meni: `Window > TextMeshPro > Import TMP Essential Resources`.
-- Klikni `Import` u prozoru koji se otvori.
-- Očekivano: pojavi se `Assets/TextMesh Pro/` folder. Bez ovoga TMP tekst se neće iscrtati.
-
-### [x] 2. Napravi scenu prototipa
-- `File > New Scene` → izaberi prazan (Empty) ili Basic template.
-- Sačuvaj kao: `Assets/MafiaGame/Content/Scenes/LocalPrototype.unity`.
-  (Ako folder ne postoji, napravi ga u Project prozoru: `Assets/MafiaGame/Content/Scenes`.)
-- U Hierarchy: `Right click > Create Empty`, preimenuj u `PrototypeBootstrap`.
-- Sa selektovanim `PrototypeBootstrap`: u Inspectoru `Add Component` → otkucaj
-  `PrototypeBootstrap` → dodaj komponentu `PrototypeBootstrap` (namespace `MafiaGame.Presentation.LocalPrototype`).
-- Sačuvaj scenu (`Ctrl+S`). Ništa drugo ne treba ručno da se povezuje — Canvas, EventSystem
-  i UI se prave iz koda pri pokretanju.
-
-### [x] 3. Dodaj scenu u Build Settings
-- `File > Build Settings` (ili `Build Profiles` u Unity 6).
-- `Add Open Scenes` da dodaš `LocalPrototype`.
-- (Opciono) prevuci je na vrh liste. Ovo je potrebno ako kasnije budemo pokretali headless
-  PlayMode test koji učitava scenu; trenutni PlayMode test ne zavisi od ovoga.
-
-### [x] 4. Igraj
-- Otvori `LocalPrototype` scenu, pritisni `Play`.
-- Očekivano: pojavi se ekran „MafiaGame — lokalni prototip (DEV)" sa 3 dugmeta postavki.
-- Klikom kroz: postavka → redom otkrivanje uloga (pass-and-play) → noć (Mafija/Doktor/Detektiv)
-  → jutro → diskusija → glasanje (svako redom) → ishod → sledeći krug ili „Kraj igre".
-
-### [x] Ako nešto ne radi
-- Nema teksta na dugmadi: nisi uradio korak 1 (TMP Essentials).
-- Klik na dugme ne reaguje: proveri da u sceni postoji `EventSystem` (pravi se automatski);
-  Console poruka „Could not assign default UI input actions" znači da treba proveriti
-  `Edit > Project Settings > Player > Active Input Handling` (očekivano: Input System Package).
-- Bilo koja crvena Console greška: pošalji mi ceo tekst greške.
+Paneli u Unity-ju (da znamo o čemu pričamo):
+- **Hierarchy** — lista objekata u sceni (levo).
+- **Inspector** — detalji selektovanog objekta (desno).
+- **Project** — fajlovi projekta (dole).
 
 ---
 
-## Milestone 3 — UGS (Unity Gaming Services) setup
+## ✅ Milestone 2 — prototip (ZAVRŠENO)
+- [x] TextMeshPro importovan.
+- [x] Scena `Assets/MafiaGame/Content/Scenes/LocalPrototype.unity` napravljena.
+- [x] Dodata u Build Settings i pokrenuta.
 
-Mrežni paketi (NGO + Relay + Lobby + Authentication + Core) su instalirani i projekat se
-kompajlira. Pre nego što Relay/Lobby kod može da radi, potrebno je povezati UGS projekat.
-Ovo se NE može uraditi iz CLI-ja — traži Unity nalog i Dashboard.
-
-### [x] 1. Prijava i povezivanje projekta
-- Otvori Unity, gore desno se prijavi na svoj Unity nalog (ako nisi).
-- `Edit > Project Settings > Services` → izaberi organizaciju i `Create`/`Link` UGS projekat.
-- Očekivano: prikaže se Project ID (i Environment `production`).
-
-### [x] 2. Uključi servise na Dashboard-u
-- Idi na https://dashboard.unity3d.com → izaberi ovaj projekat.
-- Uključi: **Authentication** (Anonymous sign-in), **Relay**, **Lobby**.
-- Free tier je dovoljan za privatne testove.
-
-### [x] 3. Potvrda
-- U `Project Settings > Services` proveri da je projekat „Linked".
-- Odgovori `done` ili mi pošalji tekst greške ako se pojavi.
-
-Napomena: dok ovo ne bude povezano, mrežni kod pišem i unit-testiram bez pozivanja Relay/Lobby-ja
-(kroz apstrakcije); pravi host-join test radimo tek posle povezivanja.
+## ✅ Milestone 3 — UGS povezivanje (ZAVRŠENO)
+- [x] Projekat povezan (Project ID `a1657a4a-a0aa-4da0-97af-0e1a57b50557`).
+- [x] Authentication, Relay, Lobby uključeni.
 
 ---
 
-## Milestone 3 — lobi scena i test host/join
+## ⬜ Milestone 3 — lobi scena i test host/join
 
-Mrežni sloj (auth + Relay/Lobby sesija + lobi UI) je napisan i unit-testiran. Za pravi
-host/join test treba scena sa NGO `NetworkManager`-om (Sessions API preko njega diže Relay).
+Cilj: napraviti scenu u kojoj jedan igrač pravi igru (dobije kod), a drugi se pridruži kodom.
+U ovim koracima se **ništa ne preuzima** — svi paketi su već instalirani.
 
-### [ ] 1. Napravi lobi scenu
-- `File > New Scene` (Empty) → sačuvaj kao `Assets/MafiaGame/Content/Scenes/Lobby.unity`.
+### [ ] 1. Napravi novu scenu
+1. Gore levo: klikni **File → New Scene**.
+2. U prozoru izaberi **Basic (URP)** (ili **Empty**), pa klikni **Create**.
+3. Klikni **File → Save As…**.
+4. U prozoru za čuvanje otvori folder **Assets/MafiaGame/Content/Scenes**.
+   - Ako taj folder ne postoji: u **Project** panelu desni klik na `MafiaGame` → **Create → Folder**,
+     nazovi ga `Content`; uđi u njega, opet **Create → Folder**, nazovi `Scenes`.
+5. Za ime ukucaj **Lobby**, klikni **Save**.
+- Očekivano: gore na tabu scene piše `Lobby`.
 
-### [ ] 2. Dodaj NetworkManager sa transportom
-- Hierarchy: `Create Empty`, preimenuj u `NetworkManager`.
-- `Add Component` → `Network Manager` (Netcode for GameObjects).
-- Na isti GameObject: `Add Component` → `Unity Transport`.
-- U `Network Manager` inspektoru, pod `Network Transport`, dodeli tu `Unity Transport`
-  komponentu (obično se sama poveže; ako ne, prevuci je u polje).
+### [ ] 2. Dodaj NetworkManager (mrežni „mozak")
+1. U **Hierarchy** panelu desni klik na prazno → **Create Empty**.
+2. Preimenuj ga u **NetworkManager** (desni klik → **Rename**, ili pritisni `F2`).
+3. Sa selektovanim `NetworkManager`, u **Inspector** panelu klikni dugme **Add Component**.
+4. Ukucaj **Network Manager** i klikni na **Network Manager** iz liste.
+5. Ponovo klikni **Add Component**, ukucaj **Unity Transport**, klikni **Unity Transport**.
+6. U komponenti **Network Manager** nađi polje **Network Transport**. Ako je prazno, klikni
+   mali kružić pored polja i izaberi **Unity Transport** (obično se poveže samo).
+- Očekivano: `NetworkManager` ima dve komponente — **Network Manager** i **Unity Transport** —
+  i polje **Network Transport** nije prazno.
 
-### [ ] 3. Dodaj lobi bootstrap
-- `Create Empty`, preimenuj u `LobbyBootstrap`.
-- `Add Component` → `LobbyBootstrap` (namespace `MafiaGame.Presentation.Lobby`).
-- Sačuvaj scenu.
+### [ ] 3. Dodaj LobbyBootstrap (pokreće lobi)
+1. U **Hierarchy** desni klik na prazno → **Create Empty**.
+2. Preimenuj ga u **LobbyBootstrap**.
+3. U **Inspector** klikni **Add Component**, ukucaj **Lobby Bootstrap**, klikni ga.
+- Očekivano: `LobbyBootstrap` ima komponentu **Lobby Bootstrap**.
 
-### [ ] 4. Dodaj `Lobby` scenu u Build Settings.
+### [ ] 4. Sačuvaj i dodaj scenu u Build
+1. Pritisni **Ctrl+S**.
+2. Klikni **File → Build Settings** (ili **Build Profiles**).
+3. Klikni **Add Open Scenes** (doda `Lobby` u listu).
+4. Zatvori prozor.
 
-### [ ] 5. Test host/join (dva učesnika)
-- Preporuka: `Window > Multiplayer > Multiplayer Play Mode` → uključi 1 dodatnog virtuelnog
-  igrača (ukupno 2), pa `Play`.
-- U jednom prozoru klikni `Napravi igru (Host)` → prikaže se kod.
-- U drugom prozoru upiši taj kod i klikni `Pridruži se kodom`.
-- Očekivano: oba prozora pokažu listu igrača (2). Ako se pojavi greška, pošalji mi je.
+### [ ] 5. Test host/join sa 2 igrača
+1. Gore klikni **Window → Multiplayer → Multiplayer Play Mode**.
+2. U tom prozoru štikliraj **Player 2** (da imaš 2 virtuelna igrača).
+3. Klikni **Play** (dugme ▶ na vrhu ekrana).
+4. Otvoriće se 2 prikaza. U prvom klikni **Napravi igru (Host)** → pojaviće se kod (npr. `ABCD`).
+5. U drugom prikazu ukucaj taj kod u polje **Unesi kod…**, pa klikni **Pridruži se kodom**.
+- Očekivano: oba prikaza pokažu listu **Igrači (2)**.
+- Ako se pojavi crvena greška u **Console** panelu, prekopiraj je i pošalji mi.
 
-Napomena: ovo je MREŽNI TEMELJ (prijava + sesija + lobi). Sinhronizacija same partije preko
-mreže (tajne uloge po klijentu, autoritativne komande/RPC, faze) je Milestone 4.
+Napomena: ovo je mrežni temelj (prijava + lobi). Sinhronizacija same partije (tajne uloge,
+komande, faze) je Milestone 4.
 
 ---
-Napomena: prototip je DEV/lokalni test harness — namerno prikazuje sve uloge operateru na
-jednom uređaju. Skrivanje informacija po igraču/klijentu dolazi tek sa mrežnim slojem
-(Milestone 3+); ova arhitektura to ne blokira.
+
+Napomena: prototip je DEV/lokalni test harness — namerno prikazuje sve uloge na jednom uređaju.
+Skrivanje po igraču/klijentu dolazi sa mrežnom partijom (Milestone 4).
