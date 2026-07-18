@@ -29,7 +29,7 @@ Paneli u Unity-ju (da znamo o čemu pričamo):
 Cilj: napraviti scenu u kojoj jedan igrač pravi igru (dobije kod), a drugi se pridruži kodom.
 U ovim koracima se **ništa ne preuzima** — svi paketi su već instalirani.
 
-### [ ] 1. Napravi novu scenu
+### [x] 1. Napravi novu scenu
 1. Gore levo: klikni **File → New Scene**.
 2. U prozoru izaberi **Basic (URP)** (ili **Empty**), pa klikni **Create**.
 3. Klikni **File → Save As…**.
@@ -39,7 +39,7 @@ U ovim koracima se **ništa ne preuzima** — svi paketi su već instalirani.
 5. Za ime ukucaj **Lobby**, klikni **Save**.
 - Očekivano: gore na tabu scene piše `Lobby`.
 
-### [ ] 2. Dodaj NetworkManager (mrežni „mozak")
+### [x] 2. Dodaj NetworkManager (mrežni „mozak")
 1. U **Hierarchy** panelu desni klik na prazno → **Create Empty**.
 2. Preimenuj ga u **NetworkManager** (desni klik → **Rename**, ili pritisni `F2`).
 3. Sa selektovanim `NetworkManager`, u **Inspector** panelu klikni dugme **Add Component**.
@@ -50,19 +50,19 @@ U ovim koracima se **ništa ne preuzima** — svi paketi su već instalirani.
 - Očekivano: `NetworkManager` ima dve komponente — **Network Manager** i **Unity Transport** —
   i polje **Network Transport** nije prazno.
 
-### [ ] 3. Dodaj LobbyBootstrap (pokreće lobi)
+### [x] 3. Dodaj LobbyBootstrap (pokreće lobi)
 1. U **Hierarchy** desni klik na prazno → **Create Empty**.
 2. Preimenuj ga u **LobbyBootstrap**.
 3. U **Inspector** klikni **Add Component**, ukucaj **Lobby Bootstrap**, klikni ga.
 - Očekivano: `LobbyBootstrap` ima komponentu **Lobby Bootstrap**.
 
-### [ ] 4. Sačuvaj i dodaj scenu u Build
+### [x] 4. Sačuvaj i dodaj scenu u Build
 1. Pritisni **Ctrl+S**.
 2. Klikni **File → Build Settings** (ili **Build Profiles**).
 3. Klikni **Add Open Scenes** (doda `Lobby` u listu).
 4. Zatvori prozor.
 
-### [ ] 5. Test host/join sa 2 igrača
+### [x] 5. Test host/join sa 2 igrača
 1. Gore klikni **Window → Multiplayer → Multiplayer Play Mode**.
 2. U tom prozoru štikliraj **Player 2** (da imaš 2 virtuelna igrača).
 3. Klikni **Play** (dugme ▶ na vrhu ekrana).
