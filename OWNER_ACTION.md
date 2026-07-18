@@ -46,6 +46,31 @@ Kod, asmdef-ovi i testovi su već napravljeni. PlayMode i EditMode testovi prola
 - Bilo koja crvena Console greška: pošalji mi ceo tekst greške.
 
 ---
+
+## Milestone 3 — UGS (Unity Gaming Services) setup
+
+Mrežni paketi (NGO + Relay + Lobby + Authentication + Core) su instalirani i projekat se
+kompajlira. Pre nego što Relay/Lobby kod može da radi, potrebno je povezati UGS projekat.
+Ovo se NE može uraditi iz CLI-ja — traži Unity nalog i Dashboard.
+
+### [ ] 1. Prijava i povezivanje projekta
+- Otvori Unity, gore desno se prijavi na svoj Unity nalog (ako nisi).
+- `Edit > Project Settings > Services` → izaberi organizaciju i `Create`/`Link` UGS projekat.
+- Očekivano: prikaže se Project ID (i Environment `production`).
+
+### [ ] 2. Uključi servise na Dashboard-u
+- Idi na https://dashboard.unity3d.com → izaberi ovaj projekat.
+- Uključi: **Authentication** (Anonymous sign-in), **Relay**, **Lobby**.
+- Free tier je dovoljan za privatne testove.
+
+### [ ] 3. Potvrda
+- U `Project Settings > Services` proveri da je projekat „Linked".
+- Odgovori `done` ili mi pošalji tekst greške ako se pojavi.
+
+Napomena: dok ovo ne bude povezano, mrežni kod pišem i unit-testiram bez pozivanja Relay/Lobby-ja
+(kroz apstrakcije); pravi host-join test radimo tek posle povezivanja.
+
+---
 Napomena: prototip je DEV/lokalni test harness — namerno prikazuje sve uloge operateru na
 jednom uređaju. Skrivanje informacija po igraču/klijentu dolazi tek sa mrežnim slojem
 (Milestone 3+); ova arhitektura to ne blokira.
