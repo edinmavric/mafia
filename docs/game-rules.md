@@ -56,6 +56,31 @@ Updated by owner decision. When code and this file conflict, ask the owner.
 - **Phase-gating of commands** (an action is only legal in its correct phase): deferred to the
   Application/command layer (Milestone 4). Milestone 1 domain services are phase-agnostic and
   validate only the intrinsic rule (living target, correct actor, etc.).
+  **Status: DONE** — implemented in `LocalMatchDriver` (guards every operation) and enforced
+  again server-side in `NetworkedMatchAuthority`.
+
+### Milestone 4 — networked match (deferred within the vertical slice)
+
+The first networked slice covers **role distribution + one night + night resolution** only.
+The following are intentionally deferred and recorded here so they are not lost:
+
+- **Networked day / voting / win loop.** Only the night is wired over the network so far.
+  Day announcement, discussion, voting, elimination, and win-condition broadcast still need a
+  networked step (next M4 increment). The pure rules already exist in the domain/`LocalMatchDriver`.
+- **Temporary auto-config (no lobby-settings UI yet).** `NetworkMatchController.HostStartMatch`
+  currently derives the match config automatically: **1 Mafia**, Doctor only when ≥ 5 players,
+  Detective only when ≥ 7 players, and **role reveal ON** (for easy testing). The host cannot yet
+  choose Mafia count / special roles / reveal from UI. A lobby-settings screen that lets the host
+  pick these (within the confirmed limits above) is deferred.
+- **Match runs inside the `Lobby` scene.** No dedicated `Game` scene and no networked scene
+  transition yet; the slice reuses the lobby scene. A proper scene flow is deferred.
+- **Seed source.** The host picks a non-predictable seed (`Guid.NewGuid().GetHashCode()`) so
+  clients cannot control or predict role assignment. This is NOT cryptographic; if stronger
+  guarantees are needed later, revisit. Clients never receive or influence the seed.
+- **Disconnect during a match.** Confirmed behavior (owner): a disconnected player stays in the
+  roster but is treated as absent — a night action only they could supply is dropped so the night
+  still resolves, and their vote is not counted. **Rejoin, grace period, and a host "end match if
+  below minimum players" control are deferred.**
 
 ## Still open (not needed until later milestones)
 - Whether dead players can speak / spectate (voice & presentation).
