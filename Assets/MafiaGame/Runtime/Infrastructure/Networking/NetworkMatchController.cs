@@ -1,0 +1,247 @@
+using System;
+using System.Collections.Generic;
+using MafiaGame.Application.Matches;
+using MafiaGame.Domain.Matches;
+using MafiaGame.Domain.Roles;
+using Unity.Netcode;
+
+namespace MafiaGame.Infrastructure.Networking
+{
+    /// <summary>
+    /// Thin NGO transport over the engine-free <see cref="NetworkedMatchAuthority"/>. The server owns
+    /// the authority and every decision; this class only moves data:
+    /// <list type="bullet">
+    /// <item>clients send intent through <c>ServerRpc</c>s (identity taken from the connection, never
+    /// from client claims);</item>
+    /// <item>public state (phase, player count, night result) is broadcast;</item>
+    /// <item>private data (each player's role, the Detective's result) is sent with a targeted
+    /// <c>ClientRpc</c> to a single client — never broadcast.</item>
+    /// </list>
+    /// The view subscribes to the plain C# events below and never touches NGO types directly.
+    /// This is a scene <c>NetworkObject</c>; the host drives the match through the Host* methods.
+    /// </summary>
+    public sealed class NetworkMatchController : NetworkBehaviour
+    {
+        // Server-only state.
+        private readonly NetworkedMatchAuthority _authority = new NetworkedMatchAuthority();
+        private readonly Dictionary<ulong, int> _seatByClient = new Dictionary<ulong, int>();
+        private readonly Dictionary<int, ulong> _clientBySeat = new Dictionary<int, ulong>();
+
+        // Public, replicated state.
+        private readonly NetworkVariable<MatchPhase> _phase = new NetworkVariable<MatchPhase>(
+            MatchPhase.Lobby, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+        private readonly NetworkVariable<int> _playerCount = new NetworkVariable<int>(
+            0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+        /// <summary>This client's seat, or -1 until roles are dealt. Local (client-side) value.</summary>
+        public int LocalSeat { get; private set; } = -1;
+
+        /// <summary>True on the host/server peer.</summary>
+        public bool IsHostPeer => IsServer;
+
+        public MatchPhase CurrentPhase => _phase.Value;
+
+        public int PlayerCount => _playerCount.Value;
+
+        // Local peer events for the view. Raised on the peer that should react.
+        public event Action Ready;
+        public event Action<PrivateRoleInfo> RoleReceived;
+        public event Action<MatchPhase> PhaseChanged;
+        public event Action<NightPublicResult> NightResolved;
+        public event Action<DetectivePrivateResult> DetectiveResultReceived;
+        public event Action<IntentRejection> IntentRejected;
+        public event Action<string> HostNotice;
+
+        public override void OnNetworkSpawn()
+        {
+            _phase.OnValueChanged += HandlePhaseChanged;
+            if (IsServer && NetworkManager != null)
+            {
+                NetworkManager.OnClientDisconnectCallback += OnClientDisconnect;
+            }
+
+            Ready?.Invoke();
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            _phase.OnValueChanged -= HandlePhaseChanged;
+            if (IsServer && NetworkManager != null)
+            {
+                NetworkManager.OnClientDisconnectCallback -= OnClientDisconnect;
+            }
+        }
+
+        // ----- Host controls (server authority) -----
+
+        /// <summary>Deals roles to the currently connected clients and enters the role-reveal phase.</summary>
+        public void HostStartMatch()
+        {
+            if (!IsServer)
+            {
+                return;
+            }
+
+            var clients = new List<ulong>(NetworkManager.ConnectedClientsIds);
+            clients.Sort();
+            int count = clients.Count;
+
+            // Temporary auto-config until a lobby settings UI exists (deferred): one Mafia, special
+            // roles only when the lobby is large enough, role reveal on for easy testing.
+            int mafiaCount = 1;
+            bool includeDoctor = count >= MatchConfiguration.MinPlayersForSpecialRole;
+            bool includeDetective = count >= MatchConfiguration.MinPlayersForBothSpecialRoles;
+            MatchConfigurationResult config = MatchConfiguration.Create(
+                count, mafiaCount, includeDoctor, includeDetective, revealRoleOnElimination: true);
+            if (!config.IsValid)
+            {
+                HostNotice?.Invoke($"Ne mogu da počnem: {config.Error}");
+                return;
+            }
+
+            _seatByClient.Clear();
+            _clientBySeat.Clear();
+            for (int seat = 0; seat < count; seat++)
+            {
+                _seatByClient[clients[seat]] = seat;
+                _clientBySeat[seat] = clients[seat];
+            }
+
+            int seed = Guid.NewGuid().GetHashCode();
+            IReadOnlyList<PrivateRoleInfo> payloads = _authority.StartMatch(count, config.Configuration, seed);
+            _playerCount.Value = count;
+
+            foreach (PrivateRoleInfo payload in payloads)
+            {
+                ulong client = _clientBySeat[payload.Seat];
+                ReceiveRoleClientRpc(
+                    payload.Seat, (int)payload.Role, ToArray(payload.MafiaTeammateSeats), Target(client));
+            }
+
+            _phase.Value = _authority.CurrentPhase; // RoleReveal
+        }
+
+        /// <summary>Advances from role reveal into the night.</summary>
+        public void HostConfirmRolesSeen()
+        {
+            if (!IsServer || _authority.CurrentPhase != MatchPhase.RoleReveal)
+            {
+                return;
+            }
+
+            _authority.ConfirmRolesSeen();
+            _phase.Value = _authority.CurrentPhase; // Night
+        }
+
+        /// <summary>Resolves the night, broadcasts the public result, and privately answers the Detective.</summary>
+        public void HostResolveNight()
+        {
+            if (!IsServer || _authority.CurrentPhase != MatchPhase.Night)
+            {
+                return;
+            }
+
+            NightOutcome outcome = _authority.ResolveNight();
+            NightPublicResult publicResult = outcome.Public;
+            NightResultClientRpc(
+                publicResult.KilledSeat,
+                publicResult.RevealedRole.HasValue,
+                publicResult.RevealedRole.HasValue ? (int)publicResult.RevealedRole.Value : 0);
+
+            if (outcome.DetectivePrivate != null &&
+                _clientBySeat.TryGetValue(outcome.DetectivePrivate.DetectiveSeat, out ulong detectiveClient))
+            {
+                DetectiveResultClientRpc(
+                    outcome.DetectivePrivate.TargetSeat,
+                    outcome.DetectivePrivate.IsMafia,
+                    Target(detectiveClient));
+            }
+
+            _phase.Value = _authority.CurrentPhase; // DayAnnouncement or GameOver
+        }
+
+        // ----- Client intents (identity from the connection) -----
+
+        [ServerRpc(RequireOwnership = false)]
+        public void SubmitMafiaTargetServerRpc(int targetSeat, ServerRpcParams rpcParams = default) =>
+            HandleIntent(rpcParams.Receive.SenderClientId, targetSeat, _authority.SubmitMafiaTarget);
+
+        [ServerRpc(RequireOwnership = false)]
+        public void SubmitDoctorProtectServerRpc(int targetSeat, ServerRpcParams rpcParams = default) =>
+            HandleIntent(rpcParams.Receive.SenderClientId, targetSeat, _authority.SubmitDoctorProtect);
+
+        [ServerRpc(RequireOwnership = false)]
+        public void SubmitDetectiveInvestigateServerRpc(int targetSeat, ServerRpcParams rpcParams = default) =>
+            HandleIntent(rpcParams.Receive.SenderClientId, targetSeat, _authority.SubmitDetectiveInvestigate);
+
+        private void HandleIntent(ulong senderClientId, int targetSeat, Func<int, int, IntentResult> submit)
+        {
+            if (!IsServer || !_seatByClient.TryGetValue(senderClientId, out int senderSeat))
+            {
+                return;
+            }
+
+            IntentResult result = submit(senderSeat, targetSeat);
+            if (!result.Accepted)
+            {
+                IntentRejectedClientRpc((int)result.Reason, Target(senderClientId));
+            }
+            else
+            {
+                IntentAcceptedClientRpc(Target(senderClientId));
+            }
+        }
+
+        private void OnClientDisconnect(ulong clientId)
+        {
+            if (IsServer && _seatByClient.TryGetValue(clientId, out int seat))
+            {
+                _authority.MarkDisconnected(seat);
+            }
+        }
+
+        // ----- Targeted / broadcast client RPCs -----
+
+        [ClientRpc]
+        private void ReceiveRoleClientRpc(int seat, int role, int[] teammateSeats, ClientRpcParams rpcParams = default)
+        {
+            LocalSeat = seat;
+            RoleReceived?.Invoke(new PrivateRoleInfo(seat, (Role)role, teammateSeats ?? Array.Empty<int>()));
+        }
+
+        [ClientRpc]
+        private void NightResultClientRpc(int killedSeat, bool hasReveal, int revealRole)
+        {
+            Role? revealed = hasReveal ? (Role?)(Role)revealRole : null;
+            NightResolved?.Invoke(new NightPublicResult(killedSeat, revealed));
+        }
+
+        [ClientRpc]
+        private void DetectiveResultClientRpc(int targetSeat, bool isMafia, ClientRpcParams rpcParams = default)
+        {
+            DetectiveResultReceived?.Invoke(new DetectivePrivateResult(LocalSeat, targetSeat, isMafia));
+        }
+
+        [ClientRpc]
+        private void IntentRejectedClientRpc(int reason, ClientRpcParams rpcParams = default) =>
+            IntentRejected?.Invoke((IntentRejection)reason);
+
+        [ClientRpc]
+        private void IntentAcceptedClientRpc(ClientRpcParams rpcParams = default) =>
+            IntentRejected?.Invoke(IntentRejection.None);
+
+        private void HandlePhaseChanged(MatchPhase previous, MatchPhase current) => PhaseChanged?.Invoke(current);
+
+        private static int[] ToArray(IReadOnlyList<int> source)
+        {
+            var list = new List<int>(source);
+            return list.ToArray();
+        }
+
+        private static ClientRpcParams Target(ulong clientId) => new ClientRpcParams
+        {
+            Send = new ClientRpcSendParams { TargetClientIds = new[] { clientId } }
+        };
+    }
+}

@@ -24,7 +24,7 @@ Paneli u Unity-ju (da znamo o čemu pričamo):
 
 ---
 
-## ⬜ Milestone 3 — lobi scena i test host/join
+## ✅ Milestone 3 — lobi scena i test host/join (ZAVRŠENO)
 
 Cilj: napraviti scenu u kojoj jedan igrač pravi igru (dobije kod), a drugi se pridruži kodom.
 U ovim koracima se **ništa ne preuzima** — svi paketi su već instalirani.
@@ -78,3 +78,62 @@ komande, faze) je Milestone 4.
 
 Napomena: prototip je DEV/lokalni test harness — namerno prikazuje sve uloge na jednom uređaju.
 Skrivanje po igraču/klijentu dolazi sa mrežnom partijom (Milestone 4).
+
+---
+
+## ⬜ Milestone 4 (presek) — mrežna partija: uloge + jedna noć
+
+Cilj: host podeli uloge (svako vidi SAMO svoju), odigra se jedna noć (napad/zaštita/istraga),
+pa host razreši noć. Sve na host-u; klijenti samo šalju namere. U ovim koracima se **ništa ne
+preuzima** — sve je već instalirano; samo dodajemo 2 objekta u postojeću `Lobby` scenu.
+
+### [ ] 1. Otvori Lobby scenu
+1. U **Project** panelu otvori **Assets → MafiaGame → Content → Scenes**.
+2. Dupli klik na **Lobby**.
+- Očekivano: gore na tabu scene piše `Lobby`.
+
+### [ ] 2. Napravi objekat „MatchController" (mrežni mozak partije)
+1. U **Hierarchy** panelu desni klik na prazno → **Create Empty**.
+2. Preimenuj ga u **MatchController** (desni klik → **Rename**, ili `F2`).
+3. Sa selektovanim `MatchController`, u **Inspector** klikni **Add Component**.
+4. Ukucaj **Network Object** i klikni na **Network Object** iz liste.
+5. Ponovo **Add Component**, ukucaj **Network Match Controller**, klikni ga.
+- Očekivano: `MatchController` ima dve komponente — **Network Object** i **Network Match Controller**.
+
+### [ ] 3. Napravi objekat „MatchView" (ekran partije)
+1. U **Hierarchy** desni klik na prazno → **Create Empty**.
+2. Preimenuj ga u **MatchView**.
+3. U **Inspector** klikni **Add Component**, ukucaj **Match Network View**, klikni ga.
+- Očekivano: `MatchView` ima komponentu **Match Network View**, a na njoj polje **Controller** (prazno).
+
+### [ ] 4. Poveži MatchView sa MatchController
+1. U **Hierarchy** klikni na **MatchView** (da ga selektuješ).
+2. U **Inspector**, na komponenti **Match Network View**, nađi polje **Controller**.
+3. Iz **Hierarchy** panela prevuci (drag) objekat **MatchController** i pusti ga na to polje **Controller**.
+- Očekivano: u polju **Controller** sada piše `MatchController (Network Match Controller)` umesto `None`.
+
+### [ ] 5. Sačuvaj scenu
+1. Pritisni **Ctrl+S**.
+- Očekivano: nestane zvezdica `*` sa taba scene.
+
+### [ ] 6. Test mrežne partije sa 4 igrača
+1. Gore klikni **Window → Multiplayer → Multiplayer Play Mode**.
+2. U tom prozoru štikliraj **Player 2**, **Player 3** i **Player 4** (ukupno 4 igrača — to je minimum za partiju).
+3. Klikni **Play** (▶). Otvoriće se 4 prozora.
+4. U **Player 1** prozoru klikni **Napravi igru (Host)** → pojaviće se kod.
+5. U **Player 2**, **Player 3** i **Player 4** ukucaj taj kod u polje pa klikni **Pridruži se kodom**.
+   - Očekivano: svaki prozor pokaže **Igrači (4)**.
+6. U **Player 1** klikni dugme **Počni partiju**.
+   - Očekivano: u SVAKOM prozoru se pojavi „Tvoje mesto: N | Uloga: …". Svako vidi **samo svoju** ulogu.
+     (Sa 4 igrača ima 1 Mafija + 3 Građanina; Doktor/Detektiv se pojavljuju tek na 5/7+ igrača.)
+7. U **Player 1** klikni **Svi videli uloge → Noć**.
+   - Očekivano: u svakom prozoru gore piše „Faza: Noć".
+8. Nađi prozor u kom piše **Uloga: Mafija**. Tamo desno klikni jedno dugme **Mesto X** (koga napadaš).
+   - Očekivano: dole se pojavi „Akcija prihvaćena." (ako klikneš svoje mesto: „Odbijeno: …").
+9. U **Player 1** klikni **Razreši noć**.
+   - Očekivano: u svim prozorima piše „Eliminisan: mesto X (uloga: …)" ili „niko nije eliminisan".
+
+Ako se pojavi **crvena** greška u **Console** panelu, prekopiraj je i pošalji mi.
+
+Napomena (pošteno): mrežni deo NISAM mogao da proverim automatski (samo kompilaciju i logiku).
+Ovaj korak je prva živa provera mrežne partije — zato javi tačno šta vidiš ili koju grešku dobiješ.
