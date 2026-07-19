@@ -15,6 +15,7 @@ namespace MafiaGame.Presentation.Lobby
     /// </summary>
     public sealed class LobbyView : MonoBehaviour, ILobbyView
     {
+        private GameObject _root;
         private TextMeshProUGUI _status;
         private GameObject _disconnectedPanel;
         private GameObject _connectedPanel;
@@ -29,6 +30,18 @@ namespace MafiaGame.Presentation.Lobby
         public event Action LeaveClicked;
 
         private void Awake() => BuildUi();
+
+        /// <summary>
+        /// Shows or hides the whole lobby UI. The match view hides it once a match starts so the two
+        /// placeholder canvases do not overlap; the presenter keeps working either way.
+        /// </summary>
+        public void SetVisible(bool visible)
+        {
+            if (_root != null)
+            {
+                _root.SetActive(visible);
+            }
+        }
 
         public void ShowStatus(string message)
         {
@@ -74,6 +87,7 @@ namespace MafiaGame.Presentation.Lobby
         {
             Canvas canvas = UiFactory.CreateCanvas("LobbyCanvas");
             canvas.transform.SetParent(transform, false);
+            _root = canvas.gameObject;
 
             var background = new GameObject("Background", typeof(RectTransform), typeof(Image));
             background.transform.SetParent(canvas.transform, false);
@@ -95,52 +109,44 @@ namespace MafiaGame.Presentation.Lobby
 
         private GameObject BuildDisconnectedPanel(Transform parent)
         {
-            GameObject panel = CreatePanel(parent, new Vector2(0.2f, 0.30f), new Vector2(0.8f, 0.82f));
+            Transform content = CreatePanel(parent, new Vector2(0.15f, 0.14f), new Vector2(0.85f, 0.82f));
 
-            Button hostButton = UiFactory.CreateButton(panel.transform, "Napravi igru (Host)");
+            Button hostButton = UiFactory.CreateButton(content, "Napravi igru (Host)");
             hostButton.onClick.AddListener(() => HostClicked?.Invoke());
 
-            _codeInput = UiFactory.CreateInputField(panel.transform, "Unesi kod…");
+            _codeInput = UiFactory.CreateInputField(content, "Unesi kod…");
             AddHeight(_codeInput.gameObject, 56f);
 
-            Button joinButton = UiFactory.CreateButton(panel.transform, "Pridruži se kodom");
+            Button joinButton = UiFactory.CreateButton(content, "Pridruži se kodom");
             joinButton.onClick.AddListener(() => JoinClicked?.Invoke());
 
-            return panel;
+            // Toggle the whole scroll view, not just its content.
+            return content.parent.gameObject;
         }
 
         private GameObject BuildConnectedPanel(Transform parent)
         {
-            GameObject panel = CreatePanel(parent, new Vector2(0.1f, 0.15f), new Vector2(0.9f, 0.82f));
+            Transform content = CreatePanel(parent, new Vector2(0.1f, 0.14f), new Vector2(0.9f, 0.82f));
 
-            _codeDisplay = UiFactory.CreateText(panel.transform, "Code", 26f, TextAlignmentOptions.Center);
+            _codeDisplay = UiFactory.CreateText(content, "Code", 26f, TextAlignmentOptions.Center);
             AddHeight(_codeDisplay.gameObject, 50f);
 
-            _playersText = UiFactory.CreateText(panel.transform, "Players", 24f, TextAlignmentOptions.TopLeft);
-            var flexible = _playersText.gameObject.AddComponent<LayoutElement>();
-            flexible.flexibleHeight = 1f;
+            _playersText = UiFactory.CreateText(content, "Players", 24f, TextAlignmentOptions.TopLeft);
+            AddHeight(_playersText.gameObject, 140f);
 
-            Button leaveButton = UiFactory.CreateButton(panel.transform, "Napusti");
+            Button leaveButton = UiFactory.CreateButton(content, "Napusti");
             leaveButton.onClick.AddListener(() => LeaveClicked?.Invoke());
 
-            return panel;
+            return content.parent.gameObject;
         }
 
-        private static GameObject CreatePanel(Transform parent, Vector2 min, Vector2 max)
-        {
-            var panel = new GameObject("Panel", typeof(RectTransform));
-            panel.transform.SetParent(parent, false);
-            Anchor(panel.GetComponent<RectTransform>(), min, max);
-
-            var layout = panel.AddComponent<VerticalLayoutGroup>();
-            layout.spacing = 12f;
-            layout.childControlHeight = true;
-            layout.childControlWidth = true;
-            layout.childForceExpandHeight = false;
-            layout.childForceExpandWidth = true;
-            layout.childAlignment = TextAnchor.UpperCenter;
-            return panel;
-        }
+        /// <summary>
+        /// A scrolling column of controls. Scrolling matters even here: on a short window the fixed
+        /// panel used to push the join input and the buttons past the bottom edge, where they could
+        /// not be clicked or typed into.
+        /// </summary>
+        private static Transform CreatePanel(Transform parent, Vector2 min, Vector2 max) =>
+            UiFactory.CreateScrollColumn(parent, "Panel", min, max);
 
         private static void AddHeight(GameObject go, float height)
         {

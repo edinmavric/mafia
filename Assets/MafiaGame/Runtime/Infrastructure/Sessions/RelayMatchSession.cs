@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using MafiaGame.Application.Sessions;
+using MafiaGame.Infrastructure.Networking;
 using Unity.Services.Multiplayer;
 
 namespace MafiaGame.Infrastructure.Sessions
@@ -47,6 +48,7 @@ namespace MafiaGame.Infrastructure.Sessions
 
         public async Task<string> HostAsync(int maxPlayers)
         {
+            TransportTuning.ApplyFastFailure();
             var options = new SessionOptions { MaxPlayers = maxPlayers, IsPrivate = true }.WithRelayNetwork();
             IHostSession session = await MultiplayerService.Instance.CreateSessionAsync(options);
             Bind(session);
@@ -60,6 +62,7 @@ namespace MafiaGame.Infrastructure.Sessions
                 throw new ArgumentException("Join code is required.", nameof(code));
             }
 
+            TransportTuning.ApplyFastFailure();
             ISession session = await MultiplayerService.Instance.JoinSessionByCodeAsync(code.Trim());
             Bind(session);
         }

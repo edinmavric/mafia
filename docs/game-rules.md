@@ -64,9 +64,19 @@ Updated by owner decision. When code and this file conflict, ask the owner.
 The first networked slice covers **role distribution + one night + night resolution** only.
 The following are intentionally deferred and recorded here so they are not lost:
 
-- **Networked day / voting / win loop.** Only the night is wired over the network so far.
-  Day announcement, discussion, voting, elimination, and win-condition broadcast still need a
-  networked step (next M4 increment). The pure rules already exist in the domain/`LocalMatchDriver`.
+- **Networked day / voting / win loop.** **Status: DONE** — day announcement, discussion, voting
+  (including the tie → revote round), elimination, and the win outcome are now host-authoritative
+  and networked. Votes are seat-based intents validated server-side; a player may change their vote
+  until the host tallies, and votes from disconnected seats are dropped. Public alive/dead status and
+  the current vote candidates are replicated as bitmasks; no role data is broadcast.
+  Still deferred here: **phase timers** (the host advances every phase by hand) and the
+  **30-second tie-breaker defense window** (see the timer item above).
+- **Phase timers, configured by the host in the lobby.** Requested by the owner on 2026-07-20 as the
+  next step: night / discussion / voting durations set in the lobby before the match starts, then run
+  by the authority (never by a client) with the remaining time replicated for display. This is what
+  replaces the manual "Počni diskusiju / Počni glasanje / Prebroj glasove" host buttons, and it is
+  also the home for the tie-breaker window and for a lobby-settings screen covering Mafia count,
+  special roles, and role reveal.
 - **Temporary auto-config (no lobby-settings UI yet).** `NetworkMatchController.HostStartMatch`
   currently derives the match config automatically: **1 Mafia**, Doctor only when ≥ 5 players,
   Detective only when ≥ 7 players, and **role reveal ON** (for easy testing). The host cannot yet

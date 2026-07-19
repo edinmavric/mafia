@@ -20,7 +20,63 @@ namespace MafiaGame.Presentation.LocalPrototype
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1280f, 720f);
 
+            // Match both axes. The default (0 = width only) makes a wide, short window scale the UI
+            // up by width until the buttons are pushed off the bottom of the screen and cannot be
+            // clicked — exactly what happens in the small Multiplayer Play Mode windows.
+            scaler.matchWidthOrHeight = 0.5f;
+
             return canvas;
+        }
+
+        /// <summary>
+        /// A vertical list of controls that scrolls when it does not fit. Without this, a column of
+        /// buttons (one per seat, up to ten) silently overflows off-screen on small windows and the
+        /// buttons below the edge are unreachable. Returns the transform to parent controls to.
+        /// </summary>
+        public static Transform CreateScrollColumn(
+            Transform parent, string name, Vector2 anchorMin, Vector2 anchorMax)
+        {
+            var viewport = new GameObject(name, typeof(RectTransform), typeof(RectMask2D));
+            viewport.transform.SetParent(parent, false);
+            var viewportRect = (RectTransform)viewport.transform;
+            Anchor(viewportRect, anchorMin, anchorMax);
+
+            var content = new GameObject("Content", typeof(RectTransform));
+            content.transform.SetParent(viewport.transform, false);
+            var contentRect = (RectTransform)content.transform;
+            contentRect.anchorMin = new Vector2(0f, 1f);
+            contentRect.anchorMax = new Vector2(1f, 1f);
+            contentRect.pivot = new Vector2(0.5f, 1f);
+            contentRect.offsetMin = new Vector2(0f, contentRect.offsetMin.y);
+            contentRect.offsetMax = new Vector2(0f, contentRect.offsetMax.y);
+
+            var layout = content.AddComponent<VerticalLayoutGroup>();
+            layout.spacing = 8f;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+
+            var fitter = content.AddComponent<ContentSizeFitter>();
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var scroll = viewport.AddComponent<ScrollRect>();
+            scroll.content = contentRect;
+            scroll.viewport = viewportRect;
+            scroll.horizontal = false;
+            scroll.vertical = true;
+            scroll.movementType = ScrollRect.MovementType.Clamped;
+            scroll.scrollSensitivity = 30f;
+
+            return content.transform;
+        }
+
+        private static void Anchor(RectTransform rt, Vector2 anchorMin, Vector2 anchorMax)
+        {
+            rt.anchorMin = anchorMin;
+            rt.anchorMax = anchorMax;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
         }
 
         public static TextMeshProUGUI CreateText(Transform parent, string name, float fontSize, TextAlignmentOptions align)
@@ -32,6 +88,9 @@ namespace MafiaGame.Presentation.LocalPrototype
             text.fontSize = fontSize;
             text.alignment = align;
             text.color = Color.white;
+
+            // Labels must never swallow clicks meant for the button underneath them.
+            text.raycastTarget = false;
             return text;
         }
 

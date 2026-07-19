@@ -3,8 +3,10 @@ using System.Text;
 using MafiaGame.Application.Matches;
 using MafiaGame.Domain.Matches;
 using MafiaGame.Domain.Roles;
+using MafiaGame.Domain.Voting;
 using MafiaGame.Infrastructure.Networking;
 using MafiaGame.Presentation.LocalPrototype;
+using MafiaGame.Presentation.Lobby;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -21,6 +23,9 @@ namespace MafiaGame.Presentation.Match
     {
         [SerializeField] private NetworkMatchController _controller;
 
+        [Tooltip("Optional: the lobby bootstrap whose UI is hidden while a match is running.")]
+        [SerializeField] private LobbyBootstrap _lobbyBootstrap;
+
         private TextMeshProUGUI _phaseText;
         private TextMeshProUGUI _roleText;
         private TextMeshProUGUI _resultText;
@@ -28,10 +33,16 @@ namespace MafiaGame.Presentation.Match
         private Button _startButton;
         private Button _confirmButton;
         private Button _resolveButton;
+        private Button _discussButton;
+        private Button _beginVoteButton;
+        private Button _resolveVoteButton;
         private Transform _nightRow;
 
         private Role _localRole = Role.Citizen;
         private bool _hasRole;
+
+        /// <summary>This player's private role line, kept so a re-render never loses it.</summary>
+        private string _roleLine = string.Empty;
 
         private void Awake() => BuildUi();
 
@@ -47,6 +58,9 @@ namespace MafiaGame.Presentation.Match
             _controller.RoleReceived += OnRoleReceived;
             _controller.PhaseChanged += OnPhaseChanged;
             _controller.NightResolved += OnNightResolved;
+            _controller.VotingResolved += OnVotingResolved;
+            _controller.ConnectedCountChanged += OnConnectedCountChanged;
+            _controller.StateChanged += Render;
             _controller.DetectiveResultReceived += OnDetectiveResult;
             _controller.IntentRejected += OnIntentFeedback;
             _controller.HostNotice += OnHostNotice;
@@ -63,12 +77,33 @@ namespace MafiaGame.Presentation.Match
             _controller.RoleReceived -= OnRoleReceived;
             _controller.PhaseChanged -= OnPhaseChanged;
             _controller.NightResolved -= OnNightResolved;
+            _controller.VotingResolved -= OnVotingResolved;
+            _controller.ConnectedCountChanged -= OnConnectedCountChanged;
+            _controller.StateChanged -= Render;
             _controller.DetectiveResultReceived -= OnDetectiveResult;
             _controller.IntentRejected -= OnIntentFeedback;
             _controller.HostNotice -= OnHostNotice;
         }
 
-        private void OnReady() => RefreshHostControls();
+        private void OnReady() => Render();
+
+        private void OnConnectedCountChanged(int count) => Render();
+
+        /// <summary>
+        /// The middle line: this player's private role once it is known, otherwise how many peers are
+        /// really connected. The lobby player list counts everyone in the Relay session, which can be
+        /// more — the connected count is what decides whether the match can start.
+        /// </summary>
+        private string InfoLine()
+        {
+            if (_hasRole)
+            {
+                return _roleLine;
+            }
+
+            int count = _controller.ConnectedCount;
+            return $"Mrežno povezano: {count} igrača (za partiju treba najmanje {MatchConfiguration.MinPlayers})";
+        }
 
         private void OnRoleReceived(PrivateRoleInfo info)
         {
@@ -89,14 +124,45 @@ namespace MafiaGame.Presentation.Match
                 builder.Append(string.Join(", ", seats));
             }
 
-            _roleText.text = builder.ToString();
+            _roleLine = builder.ToString();
+
+            // The role can arrive after the phase change, so re-render to build this role's controls.
+            Render();
         }
 
-        private void OnPhaseChanged(MatchPhase phase)
+        private void OnPhaseChanged(MatchPhase phase) => Render();
+
+        /// <summary>
+        /// Renders everything from the current replicated state. Called on every state change rather
+        /// than only on the phase change, because a client can apply the phase before the masks and
+        /// the outcome arrive — rendering once, on the phase, left clients with a stale screen.
+        /// </summary>
+        private void Render()
         {
-            _phaseText.text = "Faza: " + PhaseName(phase);
+            if (_controller == null)
+            {
+                return;
+            }
+
+            MatchPhase phase = _controller.CurrentPhase;
+            string header = "Faza: " + PhaseName(phase);
+            if (phase == MatchPhase.GameOver)
+            {
+                header += " — " + OutcomeName(_controller.Outcome);
+            }
+            else if (phase == MatchPhase.Voting)
+            {
+                header += $" ({_controller.VotesCast}/{_controller.AliveCount} glasalo)";
+            }
+
+            _phaseText.text = header;
+            _roleText.text = InfoLine();
+
+            // Hide the lobby UI for the whole match so the two placeholder canvases never overlap.
+            _lobbyBootstrap?.View?.SetVisible(phase == MatchPhase.Lobby);
+
             RefreshHostControls();
-            RebuildNightControls(phase);
+            RebuildActionControls();
         }
 
         private void OnNightResolved(NightPublicResult result)
@@ -114,6 +180,39 @@ namespace MafiaGame.Presentation.Match
             }
 
             _resultText.text = message;
+        }
+
+        private void OnVotingResolved(VotingPublicResult result)
+        {
+            switch (result.Outcome)
+            {
+                case VoteOutcome.Eliminated:
+                    string message = $"Glasanje: eliminisan je mesto {result.EliminatedSeat + 1}";
+                    if (result.RevealedRole.HasValue)
+                    {
+                        message += $" (uloga: {RoleName(result.RevealedRole.Value)})";
+                    }
+
+                    _resultText.text = message;
+                    break;
+
+                case VoteOutcome.TieRequiresRevote:
+                    var seats = new List<string>();
+                    foreach (int seat in result.TiedSeats)
+                    {
+                        seats.Add("mesto " + (seat + 1));
+                    }
+
+                    _resultText.text = "Nerešeno (" + string.Join(", ", seats) + ") — ponovno glasanje.";
+                    break;
+
+                default:
+                    _resultText.text = "Glasanje: niko nije eliminisan.";
+                    break;
+            }
+
+            // A revote keeps the phase at Voting, so the phase event does not fire — re-render here.
+            Render();
         }
 
         private void OnDetectiveResult(DetectivePrivateResult result)
@@ -139,32 +238,68 @@ namespace MafiaGame.Presentation.Match
             _startButton.gameObject.SetActive(host && phase == MatchPhase.Lobby);
             _confirmButton.gameObject.SetActive(host && phase == MatchPhase.RoleReveal);
             _resolveButton.gameObject.SetActive(host && phase == MatchPhase.Night);
+            _discussButton.gameObject.SetActive(host && phase == MatchPhase.DayAnnouncement);
+            _beginVoteButton.gameObject.SetActive(host && phase == MatchPhase.DayDiscussion);
+            _resolveVoteButton.gameObject.SetActive(host && phase == MatchPhase.Voting);
         }
 
-        private void RebuildNightControls(MatchPhase phase)
+        /// <summary>
+        /// Rebuilds the target buttons for the current phase: night actions for the local role, or
+        /// vote targets during voting. Dead players get no buttons — the host rejects them anyway,
+        /// this only avoids offering an action that cannot succeed.
+        /// </summary>
+        private void RebuildActionControls()
         {
             for (int i = _nightRow.childCount - 1; i >= 0; i--)
             {
                 Destroy(_nightRow.GetChild(i).gameObject);
             }
 
-            if (phase != MatchPhase.Night || !_hasRole || !HasNightAction(_localRole))
+            if (_controller == null || !_hasRole)
             {
                 return;
             }
 
-            int count = _controller.PlayerCount;
+            MatchPhase phase = _controller.CurrentPhase;
             int selfSeat = _controller.LocalSeat;
+            if (selfSeat < 0 || !_controller.IsSeatAlive(selfSeat))
+            {
+                return;
+            }
+
+            if (phase == MatchPhase.Night)
+            {
+                if (!HasNightAction(_localRole))
+                {
+                    return;
+                }
+
+                BuildTargetButtons(
+                    seat => _controller.IsSeatAlive(seat) &&
+                            (_localRole == Role.Doctor || seat != selfSeat), // only the Doctor may self-target
+                    SubmitNightAction);
+                return;
+            }
+
+            if (phase == MatchPhase.Voting)
+            {
+                BuildTargetButtons(_controller.IsVoteCandidate, seat => _controller.SubmitVoteServerRpc(seat));
+            }
+        }
+
+        private void BuildTargetButtons(System.Func<int, bool> isOffered, System.Action<int> onClick)
+        {
+            int count = _controller.PlayerCount;
             for (int seat = 0; seat < count; seat++)
             {
-                if (_localRole != Role.Doctor && seat == selfSeat)
+                if (!isOffered(seat))
                 {
-                    continue; // only the Doctor may target itself
+                    continue;
                 }
 
                 int target = seat;
                 Button button = UiFactory.CreateButton(_nightRow, $"Mesto {seat + 1}");
-                button.onClick.AddListener(() => SubmitNightAction(target));
+                button.onClick.AddListener(() => onClick(target));
             }
         }
 
@@ -201,8 +336,18 @@ namespace MafiaGame.Presentation.Match
             MatchPhase.Night => "Noć",
             MatchPhase.NightResolution => "Razrešenje noći",
             MatchPhase.DayAnnouncement => "Objava dana",
+            MatchPhase.DayDiscussion => "Diskusija",
+            MatchPhase.Voting => "Glasanje",
+            MatchPhase.VotingResolution => "Razrešenje glasanja",
             MatchPhase.GameOver => "Kraj partije",
             _ => phase.ToString()
+        };
+
+        private static string OutcomeName(GameOutcome outcome) => outcome switch
+        {
+            GameOutcome.TownWins => "pobedio je grad",
+            GameOutcome.MafiaWins => "pobedila je mafija",
+            _ => "nerešeno"
         };
 
         private static string RejectionText(IntentRejection reason) => reason switch
@@ -219,6 +364,15 @@ namespace MafiaGame.Presentation.Match
             canvas.transform.SetParent(transform, false);
             canvas.sortingOrder = 10; // draw above the lobby canvas
 
+            // Dim the 3D scene behind the UI: white text over the bright skybox was unreadable.
+            // Not a raycast target, so it never intercepts a click meant for a button.
+            var backdrop = new GameObject("Backdrop", typeof(RectTransform), typeof(Image));
+            backdrop.transform.SetParent(canvas.transform, false);
+            Anchor((RectTransform)backdrop.transform, Vector2.zero, Vector2.one);
+            Image backdropImage = backdrop.GetComponent<Image>();
+            backdropImage.color = new Color(0.06f, 0.06f, 0.09f, 0.82f);
+            backdropImage.raycastTarget = false;
+
             _phaseText = UiFactory.CreateText(canvas.transform, "Phase", 30f, TextAlignmentOptions.Center);
             Anchor(_phaseText.rectTransform, new Vector2(0.05f, 0.80f), new Vector2(0.95f, 0.92f));
             _phaseText.text = "Faza: Lobi";
@@ -231,34 +385,25 @@ namespace MafiaGame.Presentation.Match
             Anchor(_resultText.rectTransform, new Vector2(0.05f, 0.44f), new Vector2(0.95f, 0.60f));
             _resultText.text = string.Empty;
 
-            Transform hostRow = CreateColumn(canvas.transform, "HostRow",
-                new Vector2(0.05f, 0.06f), new Vector2(0.42f, 0.40f));
+            Transform hostRow = UiFactory.CreateScrollColumn(canvas.transform, "HostRow",
+                new Vector2(0.05f, 0.04f), new Vector2(0.45f, 0.42f));
             _startButton = UiFactory.CreateButton(hostRow, "Počni partiju");
             _startButton.onClick.AddListener(() => _controller?.HostStartMatch());
             _confirmButton = UiFactory.CreateButton(hostRow, "Svi videli uloge → Noć");
             _confirmButton.onClick.AddListener(() => _controller?.HostConfirmRolesSeen());
             _resolveButton = UiFactory.CreateButton(hostRow, "Razreši noć");
             _resolveButton.onClick.AddListener(() => _controller?.HostResolveNight());
+            _discussButton = UiFactory.CreateButton(hostRow, "Počni diskusiju");
+            _discussButton.onClick.AddListener(() => _controller?.HostContinueToDiscussion());
+            _beginVoteButton = UiFactory.CreateButton(hostRow, "Počni glasanje");
+            _beginVoteButton.onClick.AddListener(() => _controller?.HostBeginVoting());
+            _resolveVoteButton = UiFactory.CreateButton(hostRow, "Prebroj glasove");
+            _resolveVoteButton.onClick.AddListener(() => _controller?.HostResolveVoting());
 
-            _nightRow = CreateColumn(canvas.transform, "NightRow",
-                new Vector2(0.58f, 0.06f), new Vector2(0.95f, 0.40f));
+            _nightRow = UiFactory.CreateScrollColumn(canvas.transform, "NightRow",
+                new Vector2(0.55f, 0.04f), new Vector2(0.95f, 0.42f));
 
             RefreshHostControls();
-        }
-
-        private static Transform CreateColumn(Transform parent, string name, Vector2 anchorMin, Vector2 anchorMax)
-        {
-            var go = new GameObject(name, typeof(RectTransform));
-            go.transform.SetParent(parent, false);
-            Anchor((RectTransform)go.transform, anchorMin, anchorMax);
-
-            var layout = go.AddComponent<VerticalLayoutGroup>();
-            layout.spacing = 8f;
-            layout.childControlWidth = true;
-            layout.childControlHeight = true;
-            layout.childForceExpandWidth = true;
-            layout.childForceExpandHeight = false;
-            return go.transform;
         }
 
         private static void Anchor(RectTransform rt, Vector2 anchorMin, Vector2 anchorMax)

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using MafiaGame.Application.Matches;
 using MafiaGame.Domain.Matches;
 using MafiaGame.Domain.Roles;
+using MafiaGame.Domain.Voting;
 using Unity.Netcode;
 
 namespace MafiaGame.Infrastructure.Networking
@@ -34,6 +35,29 @@ namespace MafiaGame.Infrastructure.Networking
         private readonly NetworkVariable<int> _playerCount = new NetworkVariable<int>(
             0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
+        // Bit per seat: 1 = alive. Public by the rules (everyone sees who is out) and cheap to sync.
+        private readonly NetworkVariable<int> _aliveMask = new NetworkVariable<int>(
+            0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+        // Bit per seat: 1 = may be voted for in the current round (all living seats, or only the tied
+        // ones during a revote).
+        private readonly NetworkVariable<int> _voteCandidateMask = new NetworkVariable<int>(
+            0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+        // How many peers are actually connected over Netcode. This is NOT the lobby roster: a player
+        // can be in the Relay session while their transport connection failed, and only this number
+        // decides whether a match can start.
+        private readonly NetworkVariable<int> _connectedCount = new NetworkVariable<int>(
+            0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+        // How many living seats have voted in the current round. Only the count is public — never who
+        // voted or for whom.
+        private readonly NetworkVariable<int> _votesCast = new NetworkVariable<int>(
+            0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+        private readonly NetworkVariable<GameOutcome> _outcome = new NetworkVariable<GameOutcome>(
+            GameOutcome.None, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
         /// <summary>This client's seat, or -1 until roles are dealt. Local (client-side) value.</summary>
         public int LocalSeat { get; private set; } = -1;
 
@@ -44,21 +68,71 @@ namespace MafiaGame.Infrastructure.Networking
 
         public int PlayerCount => _playerCount.Value;
 
+        public GameOutcome Outcome => _outcome.Value;
+
+        /// <summary>Peers actually connected over Netcode — the number a match start is checked against.</summary>
+        public int ConnectedCount => _connectedCount.Value;
+
+        /// <summary>Votes submitted so far in the current round.</summary>
+        public int VotesCast => _votesCast.Value;
+
+        /// <summary>Number of living seats — how many votes the round can still receive.</summary>
+        public int AliveCount
+        {
+            get
+            {
+                int count = 0;
+                for (int seat = 0; seat < _playerCount.Value; seat++)
+                {
+                    if (IsSeatAlive(seat))
+                    {
+                        count++;
+                    }
+                }
+
+                return count;
+            }
+        }
+
+        /// <summary>Public alive/dead status of a seat.</summary>
+        public bool IsSeatAlive(int seat) => (_aliveMask.Value & (1 << seat)) != 0;
+
+        /// <summary>Whether a seat may be voted for in the current round.</summary>
+        public bool IsVoteCandidate(int seat) => (_voteCandidateMask.Value & (1 << seat)) != 0;
+
         // Local peer events for the view. Raised on the peer that should react.
         public event Action Ready;
         public event Action<PrivateRoleInfo> RoleReceived;
         public event Action<MatchPhase> PhaseChanged;
         public event Action<NightPublicResult> NightResolved;
+        public event Action<VotingPublicResult> VotingResolved;
         public event Action<DetectivePrivateResult> DetectiveResultReceived;
+        public event Action<int> ConnectedCountChanged;
+
+        /// <summary>Raised whenever any replicated public state changes; the view re-renders on it.</summary>
+        public event Action StateChanged;
+
         public event Action<IntentRejection> IntentRejected;
         public event Action<string> HostNotice;
 
         public override void OnNetworkSpawn()
         {
             _phase.OnValueChanged += HandlePhaseChanged;
+            _connectedCount.OnValueChanged += HandleConnectedCountChanged;
+
+            // Public state arrives as several independent variables. A client may apply the phase
+            // before the alive/candidate masks, so the view must refresh on ANY of them — refreshing
+            // only on the phase left clients without vote buttons and without the final outcome.
+            _aliveMask.OnValueChanged += HandleStateChanged;
+            _voteCandidateMask.OnValueChanged += HandleStateChanged;
+            _votesCast.OnValueChanged += HandleStateChanged;
+            _playerCount.OnValueChanged += HandleStateChanged;
+            _outcome.OnValueChanged += HandleOutcomeChanged;
             if (IsServer && NetworkManager != null)
             {
                 NetworkManager.OnClientDisconnectCallback += OnClientDisconnect;
+                NetworkManager.OnClientConnectedCallback += OnClientConnected;
+                PublishConnectedCount();
             }
 
             Ready?.Invoke();
@@ -67,9 +141,16 @@ namespace MafiaGame.Infrastructure.Networking
         public override void OnNetworkDespawn()
         {
             _phase.OnValueChanged -= HandlePhaseChanged;
+            _connectedCount.OnValueChanged -= HandleConnectedCountChanged;
+            _aliveMask.OnValueChanged -= HandleStateChanged;
+            _voteCandidateMask.OnValueChanged -= HandleStateChanged;
+            _votesCast.OnValueChanged -= HandleStateChanged;
+            _playerCount.OnValueChanged -= HandleStateChanged;
+            _outcome.OnValueChanged -= HandleOutcomeChanged;
             if (IsServer && NetworkManager != null)
             {
                 NetworkManager.OnClientDisconnectCallback -= OnClientDisconnect;
+                NetworkManager.OnClientConnectedCallback -= OnClientConnected;
             }
         }
 
@@ -86,6 +167,17 @@ namespace MafiaGame.Infrastructure.Networking
             var clients = new List<ulong>(NetworkManager.ConnectedClientsIds);
             clients.Sort();
             int count = clients.Count;
+
+            // Guard with a message that names the real problem: the lobby roster counts everyone who
+            // joined the Relay session, but only peers whose transport connection succeeded can play.
+            if (count < MatchConfiguration.MinPlayers)
+            {
+                HostNotice?.Invoke(
+                    $"Ne mogu da počnem: mrežno je povezano {count} igrača, a treba " +
+                    $"najmanje {MatchConfiguration.MinPlayers}. Sačekaj da se svi povežu ili neka " +
+                    "onaj kome je veza pukla pokuša ponovo.");
+                return;
+            }
 
             // Temporary auto-config until a lobby settings UI exists (deferred): one Mafia, special
             // roles only when the lobby is large enough, role reveal on for easy testing.
@@ -119,6 +211,7 @@ namespace MafiaGame.Infrastructure.Networking
                     payload.Seat, (int)payload.Role, ToArray(payload.MafiaTeammateSeats), Target(client));
             }
 
+            PublishAliveAndOutcome();
             _phase.Value = _authority.CurrentPhase; // RoleReveal
         }
 
@@ -158,7 +251,60 @@ namespace MafiaGame.Infrastructure.Networking
                     Target(detectiveClient));
             }
 
+            PublishAliveAndOutcome();
             _phase.Value = _authority.CurrentPhase; // DayAnnouncement or GameOver
+        }
+
+        /// <summary>Opens the free discussion after the day announcement.</summary>
+        public void HostContinueToDiscussion()
+        {
+            if (!IsServer || _authority.CurrentPhase != MatchPhase.DayAnnouncement)
+            {
+                return;
+            }
+
+            _authority.ContinueToDiscussion();
+            _phase.Value = _authority.CurrentPhase; // DayDiscussion
+        }
+
+        /// <summary>Opens the voting round; every living seat becomes a candidate.</summary>
+        public void HostBeginVoting()
+        {
+            if (!IsServer || _authority.CurrentPhase != MatchPhase.DayDiscussion)
+            {
+                return;
+            }
+
+            _authority.BeginVoting();
+            _voteCandidateMask.Value = ToMask(_authority.VoteCandidateSeats());
+            _votesCast.Value = 0;
+            _phase.Value = _authority.CurrentPhase; // Voting
+        }
+
+        /// <summary>
+        /// Tallies the votes and broadcasts the public result. A tie keeps the match in the voting
+        /// phase and narrows the candidates to the tied seats, so the same button drives the revote.
+        /// </summary>
+        public void HostResolveVoting()
+        {
+            if (!IsServer || _authority.CurrentPhase != MatchPhase.Voting)
+            {
+                return;
+            }
+
+            VotingPublicResult result = _authority.ResolveVoting();
+            _voteCandidateMask.Value = ToMask(_authority.VoteCandidateSeats());
+            _votesCast.Value = 0;
+            PublishAliveAndOutcome();
+
+            VotingResultClientRpc(
+                (int)result.Outcome,
+                result.EliminatedSeat,
+                result.RevealedRole.HasValue,
+                result.RevealedRole.HasValue ? (int)result.RevealedRole.Value : 0,
+                ToArray(result.TiedSeats));
+
+            _phase.Value = _authority.CurrentPhase; // Night, Voting (revote) or GameOver
         }
 
         // ----- Client intents (identity from the connection) -----
@@ -175,6 +321,10 @@ namespace MafiaGame.Infrastructure.Networking
         public void SubmitDetectiveInvestigateServerRpc(int targetSeat, ServerRpcParams rpcParams = default) =>
             HandleIntent(rpcParams.Receive.SenderClientId, targetSeat, _authority.SubmitDetectiveInvestigate);
 
+        [ServerRpc(RequireOwnership = false)]
+        public void SubmitVoteServerRpc(int targetSeat, ServerRpcParams rpcParams = default) =>
+            HandleIntent(rpcParams.Receive.SenderClientId, targetSeat, _authority.SubmitVote);
+
         private void HandleIntent(ulong senderClientId, int targetSeat, Func<int, int, IntentResult> submit)
         {
             if (!IsServer || !_seatByClient.TryGetValue(senderClientId, out int senderSeat))
@@ -183,6 +333,11 @@ namespace MafiaGame.Infrastructure.Networking
             }
 
             IntentResult result = submit(senderSeat, targetSeat);
+            if (result.Accepted && _authority.CurrentPhase == MatchPhase.Voting)
+            {
+                _votesCast.Value = _authority.SubmittedVoteCount;
+            }
+
             if (!result.Accepted)
             {
                 IntentRejectedClientRpc((int)result.Reason, Target(senderClientId));
@@ -195,9 +350,26 @@ namespace MafiaGame.Infrastructure.Networking
 
         private void OnClientDisconnect(ulong clientId)
         {
-            if (IsServer && _seatByClient.TryGetValue(clientId, out int seat))
+            if (!IsServer)
+            {
+                return;
+            }
+
+            if (_seatByClient.TryGetValue(clientId, out int seat))
             {
                 _authority.MarkDisconnected(seat);
+            }
+
+            PublishConnectedCount();
+        }
+
+        private void OnClientConnected(ulong clientId) => PublishConnectedCount();
+
+        private void PublishConnectedCount()
+        {
+            if (IsServer && NetworkManager != null)
+            {
+                _connectedCount.Value = NetworkManager.ConnectedClientsIds.Count;
             }
         }
 
@@ -218,6 +390,15 @@ namespace MafiaGame.Infrastructure.Networking
         }
 
         [ClientRpc]
+        private void VotingResultClientRpc(
+            int outcome, int eliminatedSeat, bool hasReveal, int revealRole, int[] tiedSeats)
+        {
+            Role? revealed = hasReveal ? (Role?)(Role)revealRole : null;
+            VotingResolved?.Invoke(new VotingPublicResult(
+                (VoteOutcome)outcome, eliminatedSeat, revealed, tiedSeats ?? Array.Empty<int>()));
+        }
+
+        [ClientRpc]
         private void DetectiveResultClientRpc(int targetSeat, bool isMafia, ClientRpcParams rpcParams = default)
         {
             DetectiveResultReceived?.Invoke(new DetectivePrivateResult(LocalSeat, targetSeat, isMafia));
@@ -232,6 +413,30 @@ namespace MafiaGame.Infrastructure.Networking
             IntentRejected?.Invoke(IntentRejection.None);
 
         private void HandlePhaseChanged(MatchPhase previous, MatchPhase current) => PhaseChanged?.Invoke(current);
+
+        private void HandleConnectedCountChanged(int previous, int current) => ConnectedCountChanged?.Invoke(current);
+
+        private void HandleStateChanged(int previous, int current) => StateChanged?.Invoke();
+
+        private void HandleOutcomeChanged(GameOutcome previous, GameOutcome current) => StateChanged?.Invoke();
+
+        /// <summary>Publishes the public alive/dead status and the win outcome. Server only.</summary>
+        private void PublishAliveAndOutcome()
+        {
+            _aliveMask.Value = ToMask(_authority.AliveSeats());
+            _outcome.Value = _authority.Outcome;
+        }
+
+        private static int ToMask(IReadOnlyList<int> seats)
+        {
+            int mask = 0;
+            foreach (int seat in seats)
+            {
+                mask |= 1 << seat;
+            }
+
+            return mask;
+        }
 
         private static int[] ToArray(IReadOnlyList<int> source)
         {

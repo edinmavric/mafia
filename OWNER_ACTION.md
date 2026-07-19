@@ -81,18 +81,18 @@ Skrivanje po igraču/klijentu dolazi sa mrežnom partijom (Milestone 4).
 
 ---
 
-## ⬜ Milestone 4 (presek) — mrežna partija: uloge + jedna noć
+## ✅ Milestone 4 (presek) — mrežna partija: uloge + jedna noć (ZAVRŠENO)
 
 Cilj: host podeli uloge (svako vidi SAMO svoju), odigra se jedna noć (napad/zaštita/istraga),
 pa host razreši noć. Sve na host-u; klijenti samo šalju namere. U ovim koracima se **ništa ne
 preuzima** — sve je već instalirano; samo dodajemo 2 objekta u postojeću `Lobby` scenu.
 
-### [ ] 1. Otvori Lobby scenu
+### [x] 1. Otvori Lobby scenu
 1. U **Project** panelu otvori **Assets → MafiaGame → Content → Scenes**.
 2. Dupli klik na **Lobby**.
 - Očekivano: gore na tabu scene piše `Lobby`.
 
-### [ ] 2. Napravi objekat „MatchController" (mrežni mozak partije)
+### [x] 2. Napravi objekat „MatchController" (mrežni mozak partije)
 1. U **Hierarchy** panelu desni klik na prazno → **Create Empty**.
 2. Preimenuj ga u **MatchController** (desni klik → **Rename**, ili `F2`).
 3. Sa selektovanim `MatchController`, u **Inspector** klikni **Add Component**.
@@ -100,23 +100,23 @@ preuzima** — sve je već instalirano; samo dodajemo 2 objekta u postojeću `Lo
 5. Ponovo **Add Component**, ukucaj **Network Match Controller**, klikni ga.
 - Očekivano: `MatchController` ima dve komponente — **Network Object** i **Network Match Controller**.
 
-### [ ] 3. Napravi objekat „MatchView" (ekran partije)
+### [x] 3. Napravi objekat „MatchView" (ekran partije)
 1. U **Hierarchy** desni klik na prazno → **Create Empty**.
 2. Preimenuj ga u **MatchView**.
 3. U **Inspector** klikni **Add Component**, ukucaj **Match Network View**, klikni ga.
 - Očekivano: `MatchView` ima komponentu **Match Network View**, a na njoj polje **Controller** (prazno).
 
-### [ ] 4. Poveži MatchView sa MatchController
+### [x] 4. Poveži MatchView sa MatchController
 1. U **Hierarchy** klikni na **MatchView** (da ga selektuješ).
 2. U **Inspector**, na komponenti **Match Network View**, nađi polje **Controller**.
 3. Iz **Hierarchy** panela prevuci (drag) objekat **MatchController** i pusti ga na to polje **Controller**.
 - Očekivano: u polju **Controller** sada piše `MatchController (Network Match Controller)` umesto `None`.
 
-### [ ] 5. Sačuvaj scenu
+### [x] 5. Sačuvaj scenu
 1. Pritisni **Ctrl+S**.
 - Očekivano: nestane zvezdica `*` sa taba scene.
 
-### [ ] 6. Test mrežne partije sa 4 igrača
+### [x] 6. Test mrežne partije sa 4 igrača
 1. Gore klikni **Window → Multiplayer → Multiplayer Play Mode**.
 2. U tom prozoru štikliraj **Player 2**, **Player 3** i **Player 4** (ukupno 4 igrača — to je minimum za partiju).
 3. Klikni **Play** (▶). Otvoriće se 4 prozora.
@@ -137,3 +137,49 @@ Ako se pojavi **crvena** greška u **Console** panelu, prekopiraj je i pošalji 
 
 Napomena (pošteno): mrežni deo NISAM mogao da proverim automatski (samo kompilaciju i logiku).
 Ovaj korak je prva živa provera mrežne partije — zato javi tačno šta vidiš ili koju grešku dobiješ.
+
+---
+
+## ✅ Milestone 4 (dan) — dan, glasanje i kraj partije (ZAVRŠENO)
+
+Cilj: posle noći ide dan — diskusija, glasanje i eliminacija, pa se partija završi kad
+mafija ili grad pobede. Dodato je i sakrivanje lobi ekrana da se tekstovi više ne preklapaju.
+U ovim koracima se **ništa ne preuzima**; treba samo da povežeš **jedno novo polje**.
+
+### [x] 1. Otvori Lobby scenu
+1. U **Project** panelu otvori **Assets → MafiaGame → Content → Scenes**.
+2. Dupli klik na **Lobby**.
+- Očekivano: gore na tabu scene piše `Lobby`.
+
+### [x] 2. Poveži MatchView sa LobbyBootstrap (da se lobi sakrije tokom partije)
+1. U **Hierarchy** klikni na **MatchView**.
+2. U **Inspector**, na komponenti **Match Network View**, sada postoji novo polje
+   **Lobby Bootstrap** (ispod polja **Controller**).
+3. Iz **Hierarchy** panela prevuci (drag) objekat **LobbyBootstrap** i pusti ga na to polje.
+- Očekivano: u polju **Lobby Bootstrap** piše `LobbyBootstrap (Lobby Bootstrap)` umesto `None`.
+- Napomena: ako ovo polje ostaviš prazno, sve i dalje radi — lobi se samo neće sakriti.
+
+### [x] 3. Sačuvaj scenu
+1. Pritisni **Ctrl+S**.
+- Očekivano: nestane zvezdica `*` sa taba scene.
+
+### [ ] 4. Test cele partije sa 4 igrača
+1. **Window → Multiplayer → Multiplayer Play Mode**, štikliraj **Player 2**, **Player 3**, **Player 4**.
+2. Klikni **Play** (▶), pa u **Player 1** klikni **Napravi igru (Host)**, a u ostala tri
+   ukucaj kod i klikni **Pridruži se kodom**.
+3. U **Player 1** klikni **Počni partiju**.
+   - Očekivano: lobi ekran (kod, lista igrača, dugme **Napusti**) **nestane** u svim prozorima,
+     ostaje samo ekran partije. Svako vidi samo svoju ulogu.
+4. **Svi videli uloge → Noć** → u prozoru gde piše **Uloga: Mafija** klikni jedno **Mesto X**
+   → u **Player 1** klikni **Razreši noć**.
+   - Očekivano: piše ko je eliminisan.
+5. U **Player 1** klikni **Počni diskusiju**, pa **Počni glasanje**.
+   - Očekivano: u svakom prozoru **živog** igrača se pojave dugmad **Mesto N** (mrtvi nemaju dugmad).
+6. Neka bar dva živa igrača kliknu **isto** mesto, pa u **Player 1** klikni **Prebroj glasove**.
+   - Očekivano: „Glasanje: eliminisan je mesto X (uloga: …)".
+   - Ako je bilo nerešeno: piše „Nerešeno (…) — ponovno glasanje" i dugmad ostanu samo za ta mesta;
+     glasajte ponovo pa opet **Prebroj glasove**.
+7. Ponavljaj noć → dan → glasanje dok se partija ne završi.
+   - Očekivano: gore piše „Faza: Kraj partije — pobedio je grad" (ili „pobedila je mafija").
+
+Ako se pojavi **crvena** greška u **Console** panelu, prekopiraj je i pošalji mi.

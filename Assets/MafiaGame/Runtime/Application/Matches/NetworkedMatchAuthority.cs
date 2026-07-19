@@ -4,6 +4,7 @@ using MafiaGame.Domain.Matches;
 using MafiaGame.Domain.Night;
 using MafiaGame.Domain.Players;
 using MafiaGame.Domain.Roles;
+using MafiaGame.Domain.Voting;
 
 namespace MafiaGame.Application.Matches
 {
@@ -30,6 +31,13 @@ namespace MafiaGame.Application.Matches
         private int? _mafiaTargetSeat;
         private int? _doctorProtectSeat;
         private int? _detectiveTargetSeat;
+
+        // Pending day votes: voter seat -> target seat. A player may change their vote until the
+        // host tallies, so the last submission per seat is the one that counts.
+        private readonly Dictionary<int, int> _votesBySeat = new Dictionary<int, int>();
+
+        // Seats a revote is restricted to after a tie; null when the round is a normal one.
+        private List<int> _revoteCandidateSeats;
 
         public MatchPhase CurrentPhase => _driver.CurrentPhase;
 
@@ -89,6 +97,8 @@ namespace MafiaGame.Application.Matches
             _started = true;
             _disconnected.Clear();
             ClearNightIntents();
+            _votesBySeat.Clear();
+            _revoteCandidateSeats = null;
 
             var payloads = new List<PrivateRoleInfo>(playerCount);
             for (int seat = 0; seat < playerCount; seat++)
@@ -180,6 +190,116 @@ namespace MafiaGame.Application.Matches
 
             ClearNightIntents();
             return new NightOutcome(publicResult, detectivePrivate);
+        }
+
+        /// <summary>Moves from the day announcement into the free discussion.</summary>
+        public void ContinueToDiscussion()
+        {
+            RequireStarted();
+            _driver.ContinueToDiscussion();
+        }
+
+        /// <summary>Opens the voting round and clears any votes left over from a previous round.</summary>
+        public void BeginVoting()
+        {
+            RequireStarted();
+            _driver.BeginVoting();
+            _votesBySeat.Clear();
+        }
+
+        /// <summary>How many seats have submitted a vote in the current round (public, safe to show).</summary>
+        public int SubmittedVoteCount => _votesBySeat.Count;
+
+        /// <summary>True while the current round is a revote restricted to the tied seats.</summary>
+        public bool IsRevote => _revoteCandidateSeats != null;
+
+        /// <summary>Seats that may be voted for right now: the tied ones in a revote, all living otherwise.</summary>
+        public IReadOnlyList<int> VoteCandidateSeats() =>
+            _revoteCandidateSeats != null ? new List<int>(_revoteCandidateSeats) : AliveSeats();
+
+        /// <summary>
+        /// Records a day vote. Validated exactly like a night intent: right phase, sender alive and
+        /// connected, living target, and — during a revote — a target that is still a candidate.
+        /// </summary>
+        public IntentResult SubmitVote(int senderSeat, int targetSeat)
+        {
+            RequireStarted();
+
+            if (CurrentPhase != MatchPhase.Voting)
+            {
+                return IntentResult.Reject(IntentRejection.WrongPhase);
+            }
+
+            if (!IsActingSeat(senderSeat))
+            {
+                return IntentResult.Reject(IntentRejection.NotAllowed);
+            }
+
+            if (!IsValidTarget(targetSeat) ||
+                (_revoteCandidateSeats != null && !_revoteCandidateSeats.Contains(targetSeat)))
+            {
+                return IntentResult.Reject(IntentRejection.InvalidTarget);
+            }
+
+            _votesBySeat[senderSeat] = targetSeat;
+            return IntentResult.Accept();
+        }
+
+        /// <summary>
+        /// Tallies the votes and returns the public result. Votes from seats that disconnected are
+        /// dropped (confirmed rule). A first-round tie keeps the match in the voting phase and arms a
+        /// revote restricted to the tied seats; a tie in the revote ends the day with no elimination.
+        /// </summary>
+        public VotingPublicResult ResolveVoting()
+        {
+            RequireStarted();
+
+            var votes = new List<Vote>();
+            foreach (KeyValuePair<int, int> entry in _votesBySeat)
+            {
+                if (_disconnected.Contains(entry.Key))
+                {
+                    continue;
+                }
+
+                votes.Add(new Vote(SeatToPlayerId(entry.Key), SeatToPlayerId(entry.Value)));
+            }
+
+            IReadOnlyCollection<PlayerId> restriction = null;
+            if (_revoteCandidateSeats != null)
+            {
+                var candidates = new List<PlayerId>(_revoteCandidateSeats.Count);
+                foreach (int seat in _revoteCandidateSeats)
+                {
+                    candidates.Add(SeatToPlayerId(seat));
+                }
+
+                restriction = candidates;
+            }
+
+            VotingResolution resolution = _driver.ResolveVoting(votes, restriction);
+            _votesBySeat.Clear();
+
+            var tiedSeats = new List<int>();
+            foreach (PlayerId candidate in resolution.TiedCandidates)
+            {
+                tiedSeats.Add(PlayerIdToSeat(candidate));
+            }
+
+            tiedSeats.Sort();
+            _revoteCandidateSeats =
+                resolution.Outcome == VoteOutcome.TieRequiresRevote ? tiedSeats : null;
+
+            int eliminatedSeat = resolution.EliminatedPlayer.HasValue
+                ? PlayerIdToSeat(resolution.EliminatedPlayer.Value)
+                : -1;
+            Role? revealedRole = null;
+            if (resolution.EliminatedPlayer.HasValue && _driver.RevealRoleOnElimination)
+            {
+                revealedRole = _driver.RoleOf(resolution.EliminatedPlayer.Value);
+            }
+
+            return new VotingPublicResult(resolution.Outcome, eliminatedSeat, revealedRole, tiedSeats);
         }
 
         private IntentResult SubmitNightIntent(
