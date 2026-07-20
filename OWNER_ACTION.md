@@ -349,35 +349,53 @@ Napravio sam ti dugme u meniju da ne moraš svaki put da biraš folder.
 - Build je **van** projekta, pa ne može slučajno da uđe u git.
 - Posle svake promene koda samo ponovo klikni isto dugme.
 
-### [ ] 2. Pokreni 6 igrača jednim klikom
+### [ ] 2. Pokreni onoliko igrača koliko ti treba
 
-1. Klikni **MafiaGame → Build and launch 6 players** (build + pokretanje odjednom),
-   ili **MafiaGame → Launch 6 players (no rebuild)** ako si već build-ovao.
-2. Otvoriće se 6 malih prozora (640x480). Rasporedi ih po ekranu.
+U meniju **MafiaGame** imaš:
 
-Ako ti je draži Terminal, radi i ovako:
+- **Launch 4 players**, **Launch 5 players**, **Launch 6 players**, **Launch 7 players**,
+  **Launch 8 players** — pokreće toliko prozora od **poslednjeg** build-a (bez ponovnog build-a).
+- **Build and launch 6 players** — build pa odmah 6 prozora.
+
+Koliko igrača za šta:
+
+| Igrača | Šta dobijaš |
+|---|---|
+| 4 | 1 Mafija + Građani (bez specijalnih uloga) |
+| 5–6 | + **Doktor** |
+| 7–8 | + **Detektiv** (obe specijalne uloge) |
+
+Svaki prozor dobija **svoj nalog** (`-profile p1`, `p2`, …). Bez toga svi prozori dele isti
+keširani anonimni nalog, pa se prijave kao **isti igrač** — odatle greška
+„player is already a member of the lobby".
+
+Ako pokrećeš iz Terminala, moraš i ti da dodaš profil:
 
 ```bash
 cd ~/MafiaBuild
-for i in 1 2 3 4 5 6; do ./Mafia.x86_64 -screen-width 640 -screen-height 480 -screen-fullscreen 0 & sleep 2; done
+for i in 1 2 3 4 5 6 7; do ./Mafia.x86_64 -screen-width 640 -screen-height 480 -screen-fullscreen 0 -profile p$i & sleep 2; done
 ```
 
 Da zatvoriš sve odjednom: `pkill -f Mafia.x86_64`
 
-### [ ] 3. Odigraj partiju sa 6 igrača
+### [ ] 3. Odigraj partiju sa 7 igrača (Doktor + Detektiv)
 
-1. U **jednom** prozoru klikni **Napravi igru (Host)** → zapamti kod.
-2. U ostalih 5 ukucaj kod i klikni **Pridruži se kodom**.
-   - Očekivano: svuda piše **Igrači (6)** i **Mrežno povezano: 6 igrača**.
-   - Očekivano: u pravilima se sam pojavi **Doktor** (ima 5+ igrača), ali **ne i Detektiv**
-     (za oba treba 7).
-3. U host prozoru klikni **Podešavanja partije** pa proveri vrednosti, zatim **Sačuvaj i zatvori**.
-4. Klikni **Počni partiju**.
-   - Očekivano: jedan igrač je **Mafija**, jedan **Doktor**, ostali **Građani**.
-5. U noći: Mafija klikne metu, **Doktor klikne koga štiti** (može i sebe).
-   - Očekivano: noć se razreši tek **kad su odigrali oboje** — ne čeka se ostatak tajmera.
+1. Pokreni **MafiaGame → Launch 7 players**.
+2. U **jednom** prozoru klikni **Napravi igru (Host)** → zapamti kod.
+3. U ostalih 6 ukucaj kod i klikni **Pridruži se kodom**.
+   - Očekivano: svuda piše **Igrači (7)** i **Mrežno povezano: 7 igrača**.
+   - Očekivano: **nema** greške „player is already a member of the lobby".
+   - Očekivano: u pravilima stoje i **Doktor** i **Detektiv**.
+   - Očekivano: lobi ekran je čist — pravila partije se ispisuju **unutar** lobi panela,
+     ništa se ne preklapa.
+4. U host prozoru klikni **Podešavanja partije** pa proveri vrednosti, zatim **Sačuvaj i zatvori**.
+5. Klikni **Počni partiju**.
+   - Očekivano: jedan igrač je **Mafija**, jedan **Doktor**, jedan **Detektiv**, ostali **Građani**.
+6. U noći: Mafija klikne metu, **Doktor** koga štiti (može i sebe), **Detektiv** koga istražuje.
+   - Očekivano: noć se razreši tek **kad su odigrala sva tri** — ne čeka se ostatak tajmera.
    - Očekivano: ako je Doktor zaštitio baš metu mafije, niko ne umire.
-6. Odigraj do kraja partije.
+   - Očekivano: Detektiv dobija odgovor **samo u svom prozoru** (Mafija / nije Mafija).
+7. Odigraj do kraja partije.
 
 Napomena: build namerno uzima **samo `Lobby` scenu**. Ranije je build pokretao
 `LocalPrototype` (pisalo je „MafiaGame — lokalni prototip (DEV)") jer je taj prototip prvi

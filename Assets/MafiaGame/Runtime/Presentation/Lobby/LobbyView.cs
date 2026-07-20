@@ -22,6 +22,7 @@ namespace MafiaGame.Presentation.Lobby
         private TMP_InputField _codeInput;
         private TextMeshProUGUI _codeDisplay;
         private TextMeshProUGUI _playersText;
+        private TextMeshProUGUI _matchSummary;
 
         public string JoinCodeInput => _codeInput != null ? _codeInput.text : string.Empty;
 
@@ -40,6 +41,19 @@ namespace MafiaGame.Presentation.Lobby
             if (_root != null)
             {
                 _root.SetActive(visible);
+            }
+        }
+
+        /// <summary>
+        /// Shows the agreed match rules inside the lobby panel. The match view used to draw this on
+        /// its own canvas, which sat on top of the lobby and made the two screens overlap into an
+        /// unreadable mess — one screen has to own the lobby, so it renders here instead.
+        /// </summary>
+        public void ShowMatchSummary(string summary)
+        {
+            if (_matchSummary != null)
+            {
+                _matchSummary.text = summary ?? string.Empty;
             }
         }
 
@@ -133,6 +147,9 @@ namespace MafiaGame.Presentation.Lobby
 
             _playersText = UiFactory.CreateText(content, "Players", 24f, TextAlignmentOptions.TopLeft);
             AddHeight(_playersText.gameObject, 140f);
+
+            _matchSummary = UiFactory.CreateText(content, "MatchSummary", 22f, TextAlignmentOptions.Center);
+            AddHeight(_matchSummary.gameObject, 90f);
 
             Button leaveButton = UiFactory.CreateButton(content, "Napusti");
             leaveButton.onClick.AddListener(() => LeaveClicked?.Invoke());

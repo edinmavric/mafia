@@ -26,6 +26,7 @@ namespace MafiaGame.Presentation.Match
         [Tooltip("Optional: the lobby bootstrap whose UI is hidden while a match is running.")]
         [SerializeField] private LobbyBootstrap _lobbyBootstrap;
 
+        private GameObject _backdrop;
         private TextMeshProUGUI _phaseText;
         private TextMeshProUGUI _roleText;
         private TextMeshProUGUI _resultText;
@@ -182,11 +183,26 @@ namespace MafiaGame.Presentation.Match
             }
 
             MatchPhase phase = _controller.CurrentPhase;
-            _phaseText.text = PhaseHeader();
-            _roleText.text = InfoLine();
+            bool inLobby = phase == MatchPhase.Lobby;
 
-            // Hide the lobby UI for the whole match so the two placeholder canvases never overlap.
-            _lobbyBootstrap?.View?.SetVisible(phase == MatchPhase.Lobby);
+            // One screen owns the lobby. While it is up this view draws nothing of its own except
+            // the host's controls: its dimmed backdrop and its texts sat on top of the lobby canvas,
+            // and the two overlapped into an unreadable mess.
+            _lobbyBootstrap?.View?.SetVisible(inLobby);
+            _backdrop.SetActive(!inLobby);
+            _phaseText.gameObject.SetActive(!inLobby);
+            _roleText.gameObject.SetActive(!inLobby);
+            _resultText.gameObject.SetActive(!inLobby);
+
+            if (inLobby)
+            {
+                _lobbyBootstrap?.View?.ShowMatchSummary(InfoLine());
+            }
+            else
+            {
+                _phaseText.text = PhaseHeader();
+                _roleText.text = InfoLine();
+            }
 
             RefreshHostControls();
             RebuildActionControls();
@@ -313,6 +329,14 @@ namespace MafiaGame.Presentation.Match
         private void OnHostNotice(string message)
         {
             _resultText.text = message;
+
+            // In the lobby this view's result line is hidden, so the message goes where the host is
+            // actually looking — otherwise "I cannot start" would vanish silently.
+            if (_controller != null && _controller.CurrentPhase == MatchPhase.Lobby)
+            {
+                _lobbyBootstrap?.View?.ShowStatus(message);
+            }
+
             _setupNotice = message;
             if (_setupSheetOpen)
             {
@@ -615,6 +639,7 @@ namespace MafiaGame.Presentation.Match
             Image backdropImage = backdrop.GetComponent<Image>();
             backdropImage.color = new Color(0.06f, 0.06f, 0.09f, 0.82f);
             backdropImage.raycastTarget = false;
+            _backdrop = backdrop;
 
             _phaseText = UiFactory.CreateText(canvas.transform, "Phase", 30f, TextAlignmentOptions.Center);
             Anchor(_phaseText.rectTransform, new Vector2(0.05f, 0.80f), new Vector2(0.95f, 0.92f));

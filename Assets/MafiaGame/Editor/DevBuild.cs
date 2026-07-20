@@ -27,7 +27,6 @@ namespace MafiaGame.EditorTools
 
         private const string OutputFolderName = "MafiaBuild";
         private const string ExecutableName = "Mafia.x86_64";
-        private const int PlayersToLaunch = 6;
 
         private static string OutputFolder => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), OutputFolderName);
@@ -44,6 +43,21 @@ namespace MafiaGame.EditorTools
             }
         }
 
+        [MenuItem("MafiaGame/Launch 4 players", priority = 20)]
+        public static void Launch4() => Launch(4);
+
+        [MenuItem("MafiaGame/Launch 5 players", priority = 21)]
+        public static void Launch5() => Launch(5);
+
+        [MenuItem("MafiaGame/Launch 6 players", priority = 22)]
+        public static void Launch6() => Launch(6);
+
+        [MenuItem("MafiaGame/Launch 7 players", priority = 23)]
+        public static void Launch7() => Launch(7);
+
+        [MenuItem("MafiaGame/Launch 8 players", priority = 24)]
+        public static void Launch8() => Launch(8);
+
         [MenuItem("MafiaGame/Build and launch 6 players", priority = 1)]
         public static void BuildAndLaunch()
         {
@@ -53,11 +67,16 @@ namespace MafiaGame.EditorTools
                 return;
             }
 
-            Launch();
+            Launch(6);
         }
 
-        [MenuItem("MafiaGame/Launch 6 players (no rebuild)", priority = 2)]
-        public static void Launch()
+        /// <summary>
+        /// Starts <paramref name="playerCount"/> copies of the build, each on its own authentication
+        /// profile. Without a distinct profile every copy reuses the same cached anonymous account —
+        /// they all sign in as one player, and the lobby rejects the second one with
+        /// "player is already a member of the lobby".
+        /// </summary>
+        public static void Launch(int playerCount)
         {
             if (!File.Exists(ExecutablePath))
             {
@@ -66,12 +85,12 @@ namespace MafiaGame.EditorTools
                 return;
             }
 
-            for (int i = 0; i < PlayersToLaunch; i++)
+            for (int i = 1; i <= playerCount; i++)
             {
                 var start = new ProcessStartInfo(ExecutablePath)
                 {
-                    // Small windows so six of them fit on one screen.
-                    Arguments = "-screen-width 640 -screen-height 480 -screen-fullscreen 0",
+                    // Small windows so eight of them still fit on one screen.
+                    Arguments = $"-screen-width 640 -screen-height 480 -screen-fullscreen 0 -profile p{i}",
                     WorkingDirectory = OutputFolder,
                     UseShellExecute = false
                 };
@@ -79,7 +98,8 @@ namespace MafiaGame.EditorTools
                 Process.Start(start);
             }
 
-            UnityEngine.Debug.Log($"[DevBuild] Launched {PlayersToLaunch} players. Close them from their own windows.");
+            UnityEngine.Debug.Log(
+                $"[DevBuild] Launched {playerCount} players (profiles p1..p{playerCount}).");
         }
 
         private static BuildReport RunBuild()
