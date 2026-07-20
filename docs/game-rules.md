@@ -31,7 +31,13 @@ Updated by owner decision. When code and this file conflict, ask the owner.
 - Night resolution: the mafia target dies unless the Doctor protected exactly that target.
 
 ### Day / voting
-- **Abstention** is allowed; only cast votes count.
+- **Abstention** is allowed; only cast votes count. Abstaining means letting the clock run out — a
+  player who does not want to vote simply does not press anything.
+- A phase **ends early the moment nobody is left to act**: the night resolves as soon as every living,
+  connected night role has submitted, and the vote is tallied as soon as every living, connected
+  player has voted (owner decision, 2026-07-20). Dead and disconnected players are never waited on.
+  Consequence: a vote (or a night target) can be changed only until the **last** player acts, not
+  until the host tallies — once the round is complete it resolves immediately.
 - Highest vote count is eliminated.
 - **Tie** for the highest → **one revote** restricted to the tied candidates; if still tied →
   **no elimination** that day.
@@ -71,12 +77,21 @@ The following are intentionally deferred and recorded here so they are not lost:
   the current vote candidates are replicated as bitmasks; no role data is broadcast.
   Still deferred here: **phase timers** (the host advances every phase by hand) and the
   **30-second tie-breaker defense window** (see the timer item above).
-- **Phase timers, configured by the host in the lobby.** Requested by the owner on 2026-07-20 as the
-  next step: night / discussion / voting durations set in the lobby before the match starts, then run
-  by the authority (never by a client) with the remaining time replicated for display. This is what
-  replaces the manual "Počni diskusiju / Počni glasanje / Prebroj glasove" host buttons, and it is
-  also the home for the tie-breaker window and for a lobby-settings screen covering Mafia count,
-  special roles, and role reveal.
+- **Phase timers.** **Status: DONE (authority side).** Role reveal, night, day announcement,
+  discussion, and voting each run on a deadline owned by the host. The authority counts down through
+  `Tick(deltaSeconds)` — elapsed time is passed in as a number, so the rules stay engine-free and the
+  timeouts are unit-tested without waiting. On expiry the authority reports a `PhaseAdvance` and the
+  transport carries it out; a client can neither run the clock nor influence it. Clients receive the
+  **deadline** in NGO server time (one message per phase, not per frame) and count down locally for
+  display only. Timeout semantics follow the confirmed rules: the night resolves with whatever
+  intents arrived, and voting tallies whatever votes were cast (abstention is allowed). A phase also
+  ends early once every living, connected player who owes an action has given it (see "Day / voting").
+  The host buttons remain as manual "skip this phase" controls.
+  Current durations are the fixed defaults in `MatchTimings.Default`: reveal 10 s, night 45 s,
+  announcement 8 s, discussion 90 s, voting 45 s.
+  Still deferred: **letting the host choose the durations in the lobby** (`MatchTimings.Create`
+  already validates host input, but no UI feeds it yet) and the **30-second tie-breaker defense
+  window**.
 - **Temporary auto-config (no lobby-settings UI yet).** `NetworkMatchController.HostStartMatch`
   currently derives the match config automatically: **1 Mafia**, Doctor only when ≥ 5 players,
   Detective only when ≥ 7 players, and **role reveal ON** (for easy testing). The host cannot yet
@@ -95,4 +110,5 @@ The following are intentionally deferred and recorded here so they are not lost:
 ## Still open (not needed until later milestones)
 - Whether dead players can speak / spectate (voice & presentation).
 - Reconnect grace period, host migration, lobby code format (networking).
-- Discussion / night / voting durations (timers).
+- Discussion / night / voting durations chosen by the host (the timer itself now exists; only the
+  lobby settings screen that feeds it is missing).

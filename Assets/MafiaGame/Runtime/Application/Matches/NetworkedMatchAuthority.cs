@@ -39,6 +39,12 @@ namespace MafiaGame.Application.Matches
         // Seats a revote is restricted to after a tie; null when the round is a normal one.
         private List<int> _revoteCandidateSeats;
 
+        // Phase timer. Real time never enters this class: the host feeds elapsed seconds into Tick,
+        // so a test can make a phase expire instantly instead of waiting for it.
+        private MatchTimings _timings = MatchTimings.Default;
+        private double _remainingSeconds;
+        private bool _timerArmed;
+
         public MatchPhase CurrentPhase => _driver.CurrentPhase;
 
         public GameOutcome Outcome => _driver.Outcome;
@@ -52,6 +58,131 @@ namespace MafiaGame.Application.Matches
         public static int PlayerIdToSeat(PlayerId id) => id.Value - 1;
 
         public bool IsDisconnected(int seat) => _disconnected.Contains(seat);
+
+        /// <summary>True while the current phase is on a clock. Untimed phases show no countdown.</summary>
+        public bool HasDeadline => _timerArmed;
+
+        /// <summary>Seconds left in the current phase, or 0 when the phase is untimed.</summary>
+        public double RemainingSeconds => _timerArmed ? _remainingSeconds : 0d;
+
+        /// <summary>
+        /// Advances the phase clock by <paramref name="deltaSeconds"/> and reports what fell due.
+        /// Only the host calls this; a client can neither call it nor influence the elapsed time.
+        /// Returns <see cref="PhaseAdvance.None"/> until the current phase actually runs out, and
+        /// disarms the timer once it fires so a single expiry cannot advance the match twice.
+        /// </summary>
+        public PhaseAdvance Tick(double deltaSeconds)
+        {
+            if (!_started || !_timerArmed)
+            {
+                return PhaseAdvance.None;
+            }
+
+            // Nobody is left to act, so waiting out the clock would only stall the match.
+            if (EveryoneActed())
+            {
+                _remainingSeconds = 0d;
+                _timerArmed = false;
+                return DueAdvance(CurrentPhase);
+            }
+
+            if (deltaSeconds <= 0d)
+            {
+                return PhaseAdvance.None;
+            }
+
+            _remainingSeconds -= deltaSeconds;
+            if (_remainingSeconds > 0d)
+            {
+                return PhaseAdvance.None;
+            }
+
+            _remainingSeconds = 0d;
+            _timerArmed = false;
+            return DueAdvance(CurrentPhase);
+        }
+
+        /// <summary>
+        /// True when the current phase has nothing left to wait for: every living, connected player
+        /// who still owes an action has given it. Disconnected and dead players are not waited on —
+        /// they can never act, so counting them would hang the phase until the clock ran out.
+        /// Only phases that collect input can finish early; a discussion is time, not input.
+        /// </summary>
+        private bool EveryoneActed()
+        {
+            switch (CurrentPhase)
+            {
+                case MatchPhase.Night: return AllNightIntentsSubmitted();
+                case MatchPhase.Voting: return AllEligibleSeatsVoted();
+                default: return false;
+            }
+        }
+
+        /// <summary>
+        /// A night role is only awaited while someone alive and connected can still play it. With no
+        /// Doctor or Detective in the match, the Mafia target alone ends the night.
+        /// </summary>
+        private bool AllNightIntentsSubmitted()
+        {
+            if (HasLivingConnectedRole(Role.Mafia) && !_mafiaTargetSeat.HasValue)
+            {
+                return false;
+            }
+
+            if (HasLivingConnectedRole(Role.Doctor) && !_doctorProtectSeat.HasValue)
+            {
+                return false;
+            }
+
+            return !HasLivingConnectedRole(Role.Detective) || _detectiveTargetSeat.HasValue;
+        }
+
+        private bool AllEligibleSeatsVoted()
+        {
+            for (int seat = 0; seat < _playerCount; seat++)
+            {
+                if (IsActingSeat(seat) && !_votesBySeat.ContainsKey(seat))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static PhaseAdvance DueAdvance(MatchPhase phase)
+        {
+            switch (phase)
+            {
+                case MatchPhase.RoleReveal: return PhaseAdvance.ConfirmRolesSeen;
+                case MatchPhase.Night: return PhaseAdvance.ResolveNight;
+                case MatchPhase.DayAnnouncement: return PhaseAdvance.ContinueToDiscussion;
+                case MatchPhase.DayDiscussion: return PhaseAdvance.BeginVoting;
+                case MatchPhase.Voting: return PhaseAdvance.ResolveVoting;
+                default: return PhaseAdvance.None;
+            }
+        }
+
+        /// <summary>
+        /// Starts the clock for whatever phase the match just entered. Phases that only exist as a
+        /// resolution step, plus the lobby and the finished match, deliberately get no deadline.
+        /// </summary>
+        private void ArmTimer()
+        {
+            double duration;
+            switch (CurrentPhase)
+            {
+                case MatchPhase.RoleReveal: duration = _timings.RoleRevealSeconds; break;
+                case MatchPhase.Night: duration = _timings.NightSeconds; break;
+                case MatchPhase.DayAnnouncement: duration = _timings.AnnouncementSeconds; break;
+                case MatchPhase.DayDiscussion: duration = _timings.DiscussionSeconds; break;
+                case MatchPhase.Voting: duration = _timings.VotingSeconds; break;
+                default: duration = 0d; break;
+            }
+
+            _timerArmed = duration > 0d;
+            _remainingSeconds = duration;
+        }
 
         /// <summary>Seats of all players still alive, in ascending order.</summary>
         public IReadOnlyList<int> AliveSeats()
@@ -72,7 +203,7 @@ namespace MafiaGame.Application.Matches
         /// role assignment stays authority-owned and unpredictable to clients.
         /// </summary>
         public IReadOnlyList<PrivateRoleInfo> StartMatch(
-            int playerCount, MatchConfiguration configuration, int seed)
+            int playerCount, MatchConfiguration configuration, int seed, MatchTimings timings = null)
         {
             if (configuration == null)
             {
@@ -99,6 +230,8 @@ namespace MafiaGame.Application.Matches
             ClearNightIntents();
             _votesBySeat.Clear();
             _revoteCandidateSeats = null;
+            _timings = timings ?? MatchTimings.Default;
+            ArmTimer();
 
             var payloads = new List<PrivateRoleInfo>(playerCount);
             for (int seat = 0; seat < playerCount; seat++)
@@ -119,6 +252,7 @@ namespace MafiaGame.Application.Matches
         {
             RequireStarted();
             _driver.ConfirmRolesSeen();
+            ArmTimer();
         }
 
         public IntentResult SubmitMafiaTarget(int senderSeat, int targetSeat) =>
@@ -189,6 +323,7 @@ namespace MafiaGame.Application.Matches
             }
 
             ClearNightIntents();
+            ArmTimer();
             return new NightOutcome(publicResult, detectivePrivate);
         }
 
@@ -197,6 +332,7 @@ namespace MafiaGame.Application.Matches
         {
             RequireStarted();
             _driver.ContinueToDiscussion();
+            ArmTimer();
         }
 
         /// <summary>Opens the voting round and clears any votes left over from a previous round.</summary>
@@ -205,6 +341,7 @@ namespace MafiaGame.Application.Matches
             RequireStarted();
             _driver.BeginVoting();
             _votesBySeat.Clear();
+            ArmTimer();
         }
 
         /// <summary>How many seats have submitted a vote in the current round (public, safe to show).</summary>
@@ -299,6 +436,8 @@ namespace MafiaGame.Application.Matches
                 revealedRole = _driver.RoleOf(resolution.EliminatedPlayer.Value);
             }
 
+            // A tie leaves the phase at Voting, so this restarts the clock for the revote round.
+            ArmTimer();
             return new VotingPublicResult(resolution.Outcome, eliminatedSeat, revealedRole, tiedSeats);
         }
 

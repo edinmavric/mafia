@@ -213,3 +213,44 @@ U ovim koracima se **ništa ne preuzima**; treba samo da povežeš **jedno novo 
    - Očekivano: gore piše „Faza: Kraj partije — pobedio je grad" (ili „pobedila je mafija").
 
 Ako se pojavi **crvena** greška u **Console** panelu, prekopiraj je i pošalji mi.
+
+---
+
+## Milestone 4 (tajmeri) — faze same teku
+
+Cilj: faze više ne čekaju host-a — svaka ima svoje vreme i sama prelazi u sledeću.
+**Ovde ne treba ništa da povezuješ u Editoru** — nema novih objekata ni polja. Samo test.
+
+Trajanja (za sada fiksna, host ih još ne bira):
+
+- prikaz uloga: **10s**
+- noć: **45s**
+- objava ko je stradao: **8s**
+- diskusija: **90s**
+- glasanje: **45s**
+
+### [ ] 1. Test cele partije sa 4 igrača
+
+1. **Window → Multiplayer → Multiplayer Play Mode**, štikliraj **Player 2**, **Player 3**, **Player 4**.
+2. Klikni **Play** (▶), u **Player 1** klikni **Napravi igru (Host)**, u ostala tri ukucaj kod
+   i klikni **Pridruži se kodom**.
+3. U **Player 1** klikni **Počni partiju**.
+   - Očekivano: gore u SVAKOM prozoru piše npr. „Faza: Prikaz uloga — 10s" i broj **opada**.
+   - Očekivano: posle 10s SAM prelazi na „Faza: Noć — 45s". Niko ništa ne klikće.
+4. U prozoru gde piše **Uloga: Mafija** klikni jedno **Mesto X**.
+   - Očekivano: noć se razreši **odmah**, ne čeka se ostatak tajmera (sa 4 igrača mafija je
+     jedina koja noću nešto radi). Kad dodamo Doktora i Detektiva, čekaće se i njih.
+5. Pusti da diskusija istekne sama.
+   - Očekivano: glasanje se samo otvori i živi igrači dobiju dugmad **Mesto N**.
+6. Neka **svi živi** igrači glasaju.
+   - Očekivano: čim glasa i poslednji, glasovi se **odmah** prebroje.
+   - Ako neko ne glasa: čeka se da tajmer istekne, pa se broje samo dati glasovi.
+7. Probaj i dugme **Preskoči → …** u **Player 1** usred neke faze.
+   - Očekivano: faza se odmah promeni, a nova faza kreće od svog **punog** vremena.
+8. Pusti partiju do kraja.
+   - Očekivano: na „Faza: Kraj partije" **nema** odbrojavanja.
+
+Ako se pojavi **crvena** greška u **Console** panelu, prekopiraj je i pošalji mi.
+
+Napomena (pošteno): pravila tajmera su pokrivena automatskim testovima (13 novih), ali kako se
+odbrojavanje ponaša **uživo preko mreže** NISAM mogao da proverim — to je ovaj tvoj test.

@@ -58,6 +58,17 @@ namespace MafiaGame.Infrastructure.Networking
         private readonly NetworkVariable<GameOutcome> _outcome = new NetworkVariable<GameOutcome>(
             GameOutcome.None, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
+        // When the current phase ends, expressed in NGO server time; NoDeadline when the phase is
+        // untimed. Replicating the deadline instead of a ticking counter costs one message per phase
+        // instead of one per frame, and every client counts down to the exact same instant.
+        private readonly NetworkVariable<double> _phaseEndsAt = new NetworkVariable<double>(
+            NoDeadline, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+        private const double NoDeadline = -1d;
+
+        /// <summary>True once the host has dealt roles; gates the server-side phase clock.</summary>
+        private bool _matchRunning;
+
         /// <summary>This client's seat, or -1 until roles are dealt. Local (client-side) value.</summary>
         public int LocalSeat { get; private set; } = -1;
 
@@ -91,6 +102,28 @@ namespace MafiaGame.Infrastructure.Networking
                 }
 
                 return count;
+            }
+        }
+
+        /// <summary>True while the current phase is counting down.</summary>
+        public bool HasPhaseDeadline => _phaseEndsAt.Value > NoDeadline;
+
+        /// <summary>
+        /// Seconds left in the current phase, never negative. Computed locally from the replicated
+        /// deadline and NGO server time, so it stays smooth without any per-frame traffic. This is
+        /// display only: the host alone decides when a phase actually ends.
+        /// </summary>
+        public double RemainingSeconds
+        {
+            get
+            {
+                if (!HasPhaseDeadline || NetworkManager == null)
+                {
+                    return 0d;
+                }
+
+                double remaining = _phaseEndsAt.Value - NetworkManager.ServerTime.Time;
+                return remaining > 0d ? remaining : 0d;
             }
         }
 
@@ -154,6 +187,45 @@ namespace MafiaGame.Infrastructure.Networking
             }
         }
 
+        /// <summary>
+        /// Runs the phase clock. Server only: a client never advances a phase, it just watches the
+        /// replicated deadline. The authority decides what fell due; this only carries it out, which
+        /// keeps the timing rules in the unit-tested class rather than in a MonoBehaviour.
+        /// </summary>
+        private void Update()
+        {
+            if (!IsServer || !_matchRunning)
+            {
+                return;
+            }
+
+            switch (_authority.Tick(UnityEngine.Time.deltaTime))
+            {
+                case PhaseAdvance.ConfirmRolesSeen: HostConfirmRolesSeen(); break;
+                case PhaseAdvance.ResolveNight: HostResolveNight(); break;
+                case PhaseAdvance.ContinueToDiscussion: HostContinueToDiscussion(); break;
+                case PhaseAdvance.BeginVoting: HostBeginVoting(); break;
+                case PhaseAdvance.ResolveVoting: HostResolveVoting(); break;
+            }
+        }
+
+        /// <summary>
+        /// Publishes the new phase together with its deadline. Both must move as one: a client that
+        /// saw the phase but kept the old deadline would show a countdown for the wrong phase.
+        /// </summary>
+        private void PublishPhase()
+        {
+            _phaseEndsAt.Value = _authority.HasDeadline
+                ? NetworkManager.ServerTime.Time + _authority.RemainingSeconds
+                : NoDeadline;
+            _phase.Value = _authority.CurrentPhase;
+
+            if (_authority.CurrentPhase == MatchPhase.GameOver)
+            {
+                _matchRunning = false;
+            }
+        }
+
         // ----- Host controls (server authority) -----
 
         /// <summary>Deals roles to the currently connected clients and enters the role-reveal phase.</summary>
@@ -212,7 +284,8 @@ namespace MafiaGame.Infrastructure.Networking
             }
 
             PublishAliveAndOutcome();
-            _phase.Value = _authority.CurrentPhase; // RoleReveal
+            _matchRunning = true;
+            PublishPhase(); // RoleReveal
         }
 
         /// <summary>Advances from role reveal into the night.</summary>
@@ -224,7 +297,7 @@ namespace MafiaGame.Infrastructure.Networking
             }
 
             _authority.ConfirmRolesSeen();
-            _phase.Value = _authority.CurrentPhase; // Night
+            PublishPhase(); // Night
         }
 
         /// <summary>Resolves the night, broadcasts the public result, and privately answers the Detective.</summary>
@@ -252,7 +325,7 @@ namespace MafiaGame.Infrastructure.Networking
             }
 
             PublishAliveAndOutcome();
-            _phase.Value = _authority.CurrentPhase; // DayAnnouncement or GameOver
+            PublishPhase(); // DayAnnouncement or GameOver
         }
 
         /// <summary>Opens the free discussion after the day announcement.</summary>
@@ -264,7 +337,7 @@ namespace MafiaGame.Infrastructure.Networking
             }
 
             _authority.ContinueToDiscussion();
-            _phase.Value = _authority.CurrentPhase; // DayDiscussion
+            PublishPhase(); // DayDiscussion
         }
 
         /// <summary>Opens the voting round; every living seat becomes a candidate.</summary>
@@ -278,7 +351,7 @@ namespace MafiaGame.Infrastructure.Networking
             _authority.BeginVoting();
             _voteCandidateMask.Value = ToMask(_authority.VoteCandidateSeats());
             _votesCast.Value = 0;
-            _phase.Value = _authority.CurrentPhase; // Voting
+            PublishPhase(); // Voting
         }
 
         /// <summary>
@@ -304,7 +377,7 @@ namespace MafiaGame.Infrastructure.Networking
                 result.RevealedRole.HasValue ? (int)result.RevealedRole.Value : 0,
                 ToArray(result.TiedSeats));
 
-            _phase.Value = _authority.CurrentPhase; // Night, Voting (revote) or GameOver
+            PublishPhase(); // Night, Voting (revote) or GameOver
         }
 
         // ----- Client intents (identity from the connection) -----

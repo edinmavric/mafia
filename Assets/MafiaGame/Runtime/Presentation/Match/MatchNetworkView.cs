@@ -44,6 +44,9 @@ namespace MafiaGame.Presentation.Match
         /// <summary>This player's private role line, kept so a re-render never loses it.</summary>
         private string _roleLine = string.Empty;
 
+        /// <summary>Countdown value currently on screen; -1 means "no timer shown".</summary>
+        private int _shownSeconds = -1;
+
         private void Awake() => BuildUi();
 
         private void OnEnable()
@@ -145,7 +148,55 @@ namespace MafiaGame.Presentation.Match
             }
 
             MatchPhase phase = _controller.CurrentPhase;
+            _phaseText.text = PhaseHeader();
+            _roleText.text = InfoLine();
+
+            // Hide the lobby UI for the whole match so the two placeholder canvases never overlap.
+            _lobbyBootstrap?.View?.SetVisible(phase == MatchPhase.Lobby);
+
+            RefreshHostControls();
+            RebuildActionControls();
+        }
+
+        /// <summary>
+        /// Repaints only the header so the countdown ticks. The rest of the screen is event-driven;
+        /// redrawing the seat buttons every frame would rebuild them under the player's cursor.
+        /// </summary>
+        private void Update()
+        {
+            if (_controller == null)
+            {
+                return;
+            }
+
+            int seconds = RemainingWholeSeconds();
+            if (seconds == _shownSeconds)
+            {
+                return;
+            }
+
+            _shownSeconds = seconds;
+            _phaseText.text = PhaseHeader();
+        }
+
+        private int RemainingWholeSeconds() =>
+            _controller.HasPhaseDeadline ? Mathf.CeilToInt((float)_controller.RemainingSeconds) : -1;
+
+        /// <summary>
+        /// Top line: the phase, its remaining time, and the phase-specific extra (the vote tally or
+        /// the final outcome). Built in one place so the countdown and a state change never disagree.
+        /// </summary>
+        private string PhaseHeader()
+        {
+            MatchPhase phase = _controller.CurrentPhase;
             string header = "Faza: " + PhaseName(phase);
+
+            int seconds = RemainingWholeSeconds();
+            if (seconds >= 0)
+            {
+                header += $" — {seconds}s";
+            }
+
             if (phase == MatchPhase.GameOver)
             {
                 header += " — " + OutcomeName(_controller.Outcome);
@@ -155,14 +206,7 @@ namespace MafiaGame.Presentation.Match
                 header += $" ({_controller.VotesCast}/{_controller.AliveCount} glasalo)";
             }
 
-            _phaseText.text = header;
-            _roleText.text = InfoLine();
-
-            // Hide the lobby UI for the whole match so the two placeholder canvases never overlap.
-            _lobbyBootstrap?.View?.SetVisible(phase == MatchPhase.Lobby);
-
-            RefreshHostControls();
-            RebuildActionControls();
+            return header;
         }
 
         private void OnNightResolved(NightPublicResult result)
@@ -389,13 +433,13 @@ namespace MafiaGame.Presentation.Match
                 new Vector2(0.05f, 0.04f), new Vector2(0.45f, 0.42f));
             _startButton = UiFactory.CreateButton(hostRow, "Počni partiju");
             _startButton.onClick.AddListener(() => _controller?.HostStartMatch());
-            _confirmButton = UiFactory.CreateButton(hostRow, "Svi videli uloge → Noć");
+            _confirmButton = UiFactory.CreateButton(hostRow, "Preskoči → Noć");
             _confirmButton.onClick.AddListener(() => _controller?.HostConfirmRolesSeen());
-            _resolveButton = UiFactory.CreateButton(hostRow, "Razreši noć");
+            _resolveButton = UiFactory.CreateButton(hostRow, "Preskoči → Razreši noć");
             _resolveButton.onClick.AddListener(() => _controller?.HostResolveNight());
-            _discussButton = UiFactory.CreateButton(hostRow, "Počni diskusiju");
+            _discussButton = UiFactory.CreateButton(hostRow, "Preskoči → Diskusija");
             _discussButton.onClick.AddListener(() => _controller?.HostContinueToDiscussion());
-            _beginVoteButton = UiFactory.CreateButton(hostRow, "Počni glasanje");
+            _beginVoteButton = UiFactory.CreateButton(hostRow, "Preskoči → Glasanje");
             _beginVoteButton.onClick.AddListener(() => _controller?.HostBeginVoting());
             _resolveVoteButton = UiFactory.CreateButton(hostRow, "Prebroj glasove");
             _resolveVoteButton.onClick.AddListener(() => _controller?.HostResolveVoting());
