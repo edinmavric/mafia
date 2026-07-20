@@ -91,6 +91,55 @@ namespace MafiaGame.Application.Matches
         public MatchConfigurationResult ToConfiguration(int playerCount) => MatchConfiguration.Create(
             playerCount, MafiaCount, IncludeDoctor, IncludeDetective, RevealRoleOnElimination);
 
+        /// <summary>
+        /// Returns the closest setup this lobby size can actually play. Options the lobby is too
+        /// small for are switched off rather than refused: refusing every edit left the host stuck,
+        /// because with a small lobby each individual change was still illegal on its own.
+        /// The Detective is dropped before the Doctor, and the Mafia count is lowered only as far as
+        /// it must be. Returns the same instance when nothing has to change.
+        /// </summary>
+        public MatchSetup ClampTo(int playerCount)
+        {
+            MatchSetup setup = this;
+
+            if (playerCount < MatchConfiguration.MinPlayersForSpecialRole)
+            {
+                setup = setup.WithDoctor(false).WithDetective(false);
+            }
+            else if (playerCount < MatchConfiguration.MinPlayersForBothSpecialRoles &&
+                     setup.IncludeDoctor && setup.IncludeDetective)
+            {
+                setup = setup.WithDetective(false);
+            }
+
+            // Whatever the size rules allow, the Mafia must still start outnumbered; walk the count
+            // down until the configuration is legal instead of guessing which bound was hit.
+            for (int mafia = setup.MafiaCount; mafia >= 1; mafia--)
+            {
+                MatchSetup candidate = setup.WithMafiaCount(mafia);
+                if (candidate.ToConfiguration(playerCount).IsValid)
+                {
+                    return candidate.SameAs(this) ? this : candidate;
+                }
+            }
+
+            MatchSetup fallback = setup.WithMafiaCount(1);
+            return fallback.SameAs(this) ? this : fallback;
+        }
+
+        /// <summary>Value comparison, used to tell the host only about changes they did not ask for.</summary>
+        public bool SameAs(MatchSetup other) =>
+            other != null &&
+            MafiaCount == other.MafiaCount &&
+            IncludeDoctor == other.IncludeDoctor &&
+            IncludeDetective == other.IncludeDetective &&
+            RevealRoleOnElimination == other.RevealRoleOnElimination &&
+            Timings.NightSeconds == other.Timings.NightSeconds &&
+            Timings.DiscussionSeconds == other.Timings.DiscussionSeconds &&
+            Timings.VotingSeconds == other.Timings.VotingSeconds &&
+            Timings.RoleRevealSeconds == other.Timings.RoleRevealSeconds &&
+            Timings.AnnouncementSeconds == other.Timings.AnnouncementSeconds;
+
         /// <summary>A one-line, leak-free summary every player may see before the match starts.</summary>
         public string Describe()
         {

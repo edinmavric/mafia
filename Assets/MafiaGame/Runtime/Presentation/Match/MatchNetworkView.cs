@@ -38,9 +38,16 @@ namespace MafiaGame.Presentation.Match
         private Button _resolveVoteButton;
         private Transform _nightRow;
 
-        // Host-only lobby settings.
+        // Host-only lobby settings, shown as a sheet over the lobby.
         private Transform _setupRow;
         private GameObject _setupRoot;
+        private Button _openSetupButton;
+        private TextMeshProUGUI _setupHintText;
+        private bool _setupSheetOpen;
+
+        /// <summary>Last host-only message, so the sheet can show it instead of the generic hint.</summary>
+        private string _setupNotice = string.Empty;
+
         private Button _mafiaCountButton;
         private Button _doctorButton;
         private Button _detectiveButton;
@@ -299,7 +306,66 @@ namespace MafiaGame.Presentation.Match
                 : "Odbijeno: " + RejectionText(reason);
         }
 
-        private void OnHostNotice(string message) => _resultText.text = message;
+        /// <summary>
+        /// Shows a host-only message. It also goes to the settings sheet, which covers the normal
+        /// result line — a rejected setting has to be visible where the host is looking.
+        /// </summary>
+        private void OnHostNotice(string message)
+        {
+            _resultText.text = message;
+            _setupNotice = message;
+            if (_setupSheetOpen)
+            {
+                RefreshSetupLabels();
+            }
+        }
+
+        /// <summary>
+        /// Builds the settings sheet: a panel that covers the lobby while it is open. Its background
+        /// is a raycast target on purpose, so a click meant for a setting can never fall through to
+        /// the lobby underneath. Created last so it draws above everything else on this canvas.
+        /// </summary>
+        private void BuildSetupSheet(Transform parent)
+        {
+            var sheet = new GameObject("SetupSheet", typeof(RectTransform), typeof(Image));
+            sheet.transform.SetParent(parent, false);
+            Anchor((RectTransform)sheet.transform, Vector2.zero, Vector2.one);
+            sheet.GetComponent<Image>().color = new Color(0.04f, 0.04f, 0.07f, 0.97f);
+            _setupRoot = sheet;
+
+            TextMeshProUGUI title = UiFactory.CreateText(
+                sheet.transform, "Title", 30f, TextAlignmentOptions.Center);
+            Anchor(title.rectTransform, new Vector2(0.05f, 0.86f), new Vector2(0.95f, 0.96f));
+            title.text = "Podešavanja partije";
+
+            _setupHintText = UiFactory.CreateText(sheet.transform, "Hint", 22f, TextAlignmentOptions.Center);
+            Anchor(_setupHintText.rectTransform, new Vector2(0.05f, 0.76f), new Vector2(0.95f, 0.85f));
+            _setupHintText.text = string.Empty;
+
+            _setupRow = UiFactory.CreateScrollColumn(sheet.transform, "SetupRow",
+                new Vector2(0.15f, 0.16f), new Vector2(0.85f, 0.74f));
+            BuildSetupControls();
+
+            Transform footer = UiFactory.CreateScrollColumn(sheet.transform, "SetupFooter",
+                new Vector2(0.15f, 0.04f), new Vector2(0.85f, 0.14f));
+            Button close = UiFactory.CreateButton(footer, "Sačuvaj i zatvori");
+            close.onClick.AddListener(() => SetSetupSheetOpen(false));
+        }
+
+        /// <summary>
+        /// Opens or closes the settings sheet. Every change is already sent to the host as it is
+        /// made, so closing only hides the sheet — there is nothing left to save or to discard.
+        /// </summary>
+        private void SetSetupSheetOpen(bool open)
+        {
+            _setupSheetOpen = open;
+            if (open)
+            {
+                _setupNotice = string.Empty;
+            }
+
+            Render();
+        }
 
         /// <summary>
         /// Builds the host's lobby settings. Each control is one button that cycles through its
@@ -328,7 +394,15 @@ namespace MafiaGame.Presentation.Match
         private Button CreateSetupButton(UnityEngine.Events.UnityAction onClick)
         {
             Button button = UiFactory.CreateButton(_setupRow, string.Empty);
-            button.onClick.AddListener(onClick);
+            button.onClick.AddListener(() =>
+            {
+                // Drop the previous message first; the host applies the change synchronously, so a
+                // new notice lands right after this and a stale one never lingers.
+                _setupNotice = string.Empty;
+                onClick();
+                RefreshSetupLabels();
+            });
+
             return button;
         }
 
@@ -362,6 +436,13 @@ namespace MafiaGame.Presentation.Match
             }
 
             MatchSetup setup = _controller.Setup;
+            _setupHintText.text = string.IsNullOrEmpty(_setupNotice)
+                ? $"Povezano: {_controller.ConnectedCount} igrača.  " +
+                  $"Specijalna uloga traži bar {MatchConfiguration.MinPlayersForSpecialRole}, " +
+                  $"obe bar {MatchConfiguration.MinPlayersForBothSpecialRoles} igrača.\n" +
+                  "Klik na dugme menja vrednost."
+                : _setupNotice;
+
             SetLabel(_mafiaCountButton, $"Mafija: {setup.MafiaCount}");
             SetLabel(_doctorButton, $"Doktor: {YesNo(setup.IncludeDoctor)}");
             SetLabel(_detectiveButton, $"Detektiv: {YesNo(setup.IncludeDetective)}");
@@ -386,14 +467,18 @@ namespace MafiaGame.Presentation.Match
             MatchPhase phase = _controller != null ? _controller.CurrentPhase : MatchPhase.Lobby;
 
             // Settings are the host's, and only before the match: changing the rules mid-game would
-            // move the goalposts on players who already know their roles.
-            _setupRoot.SetActive(host && phase == MatchPhase.Lobby);
-            if (_setupRoot.activeSelf)
+            // move the goalposts on players who already know their roles. Leaving the lobby closes
+            // the sheet, so a match can never start with it covering the screen.
+            bool canConfigure = host && phase == MatchPhase.Lobby;
+            _setupSheetOpen &= canConfigure;
+            _setupRoot.SetActive(_setupSheetOpen);
+            if (_setupSheetOpen)
             {
                 RefreshSetupLabels();
             }
 
-            _startButton.gameObject.SetActive(host && phase == MatchPhase.Lobby);
+            _openSetupButton.gameObject.SetActive(canConfigure && !_setupSheetOpen);
+            _startButton.gameObject.SetActive(canConfigure && !_setupSheetOpen);
             _confirmButton.gameObject.SetActive(host && phase == MatchPhase.RoleReveal);
             _resolveButton.gameObject.SetActive(host && phase == MatchPhase.Night);
             _discussButton.gameObject.SetActive(host && phase == MatchPhase.DayAnnouncement);
@@ -547,6 +632,8 @@ namespace MafiaGame.Presentation.Match
                 new Vector2(0.05f, 0.04f), new Vector2(0.45f, 0.42f));
             _startButton = UiFactory.CreateButton(hostRow, "Počni partiju");
             _startButton.onClick.AddListener(() => _controller?.HostStartMatch());
+            _openSetupButton = UiFactory.CreateButton(hostRow, "Podešavanja partije");
+            _openSetupButton.onClick.AddListener(() => SetSetupSheetOpen(true));
             _confirmButton = UiFactory.CreateButton(hostRow, "Preskoči → Noć");
             _confirmButton.onClick.AddListener(() => _controller?.HostConfirmRolesSeen());
             _resolveButton = UiFactory.CreateButton(hostRow, "Preskoči → Razreši noć");
@@ -561,11 +648,7 @@ namespace MafiaGame.Presentation.Match
             _nightRow = UiFactory.CreateScrollColumn(canvas.transform, "NightRow",
                 new Vector2(0.55f, 0.04f), new Vector2(0.95f, 0.42f));
 
-            // Lobby settings share the right column: it is empty until a match starts anyway.
-            _setupRow = UiFactory.CreateScrollColumn(canvas.transform, "SetupRow",
-                new Vector2(0.55f, 0.04f), new Vector2(0.95f, 0.42f));
-            _setupRoot = _setupRow.parent.gameObject; // toggle the whole scroll view, not just its content
-            BuildSetupControls();
+            BuildSetupSheet(canvas.transform);
 
             RefreshHostControls();
         }

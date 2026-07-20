@@ -106,6 +106,81 @@ namespace MafiaGame.Tests.EditMode
         }
 
         [Test]
+        public void ClampTo_SmallLobby_SwitchesBothSpecialRolesOff()
+        {
+            MatchSetup clamped = MatchSetup.Default.ClampTo(4);
+
+            Assert.IsFalse(clamped.IncludeDoctor);
+            Assert.IsFalse(clamped.IncludeDetective);
+            Assert.IsTrue(clamped.ToConfiguration(4).IsValid);
+        }
+
+        [Test]
+        public void ClampTo_MediumLobby_KeepsTheDoctorAndDropsTheDetective()
+        {
+            MatchSetup clamped = MatchSetup.Default.ClampTo(5);
+
+            Assert.IsTrue(clamped.IncludeDoctor);
+            Assert.IsFalse(clamped.IncludeDetective);
+            Assert.IsTrue(clamped.ToConfiguration(5).IsValid);
+        }
+
+        [Test]
+        public void ClampTo_LargeEnoughLobby_ChangesNothing()
+        {
+            MatchSetup setup = MatchSetup.Default;
+
+            Assert.IsTrue(setup.ClampTo(7).SameAs(setup));
+        }
+
+        [Test]
+        public void ClampTo_LowersTheMafiaCountUntilTheyAreOutnumbered()
+        {
+            MatchSetup setup = MatchSetup.Default.WithMafiaCount(3).WithDoctor(false).WithDetective(false);
+
+            MatchSetup clamped = setup.ClampTo(4);
+
+            Assert.Less(clamped.MafiaCount, 3);
+            Assert.IsTrue(clamped.ToConfiguration(4).IsValid);
+        }
+
+        /// <summary>
+        /// The bug this guards against: every single toggle was refused in a small lobby because the
+        /// setup was illegal to begin with, so the host could never reach a startable match.
+        /// </summary>
+        [Test]
+        public void ClampTo_AlwaysProducesAStartableSetup_ForEveryLobbySize()
+        {
+            foreach (bool doctor in new[] { true, false })
+            {
+                foreach (bool detective in new[] { true, false })
+                {
+                    for (int players = MatchConfiguration.MinPlayers; players <= 10; players++)
+                    {
+                        MatchSetup setup = MatchSetup.Default
+                            .WithDoctor(doctor).WithDetective(detective).WithMafiaCount(3);
+
+                        MatchConfigurationResult result = setup.ClampTo(players).ToConfiguration(players);
+
+                        Assert.IsTrue(result.IsValid,
+                            $"players={players} doctor={doctor} detective={detective}: {result.Error}");
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public void ClampTo_KeepsTheSettingsThatLobbySizeDoesNotAffect()
+        {
+            MatchSetup setup = MatchSetup.Default.WithRoleReveal(false).WithNightSeconds(60d);
+
+            MatchSetup clamped = setup.ClampTo(4);
+
+            Assert.IsFalse(clamped.RevealRoleOnElimination);
+            Assert.AreEqual(60d, clamped.Timings.NightSeconds, 0.001d);
+        }
+
+        [Test]
         public void Describe_ReportsTheAgreedRulesWithoutLeakingAnything()
         {
             string text = MatchSetup.Default.WithMafiaCount(2).WithDetective(false).Describe();

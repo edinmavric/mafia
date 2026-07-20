@@ -159,21 +159,64 @@ namespace MafiaGame.Infrastructure.Networking
                 return;
             }
 
-            // Reject a setup the current lobby cannot play instead of starting and failing later.
-            int count = NetworkManager != null ? NetworkManager.ConnectedClientsIds.Count : 0;
-            if (count >= MatchConfiguration.MinPlayers)
+            ApplySetup(updated, explainClamp: true);
+        }
+
+        /// <summary>
+        /// Stores and replicates a setup, first trimming it to what the current lobby can play. The
+        /// host is told when something was switched off for them, so a silently changed rule never
+        /// surprises the table.
+        /// </summary>
+        private void ApplySetup(MatchSetup wanted, bool explainClamp)
+        {
+            MatchSetup allowed = wanted.ClampTo(LobbySizeForRules());
+            if (explainClamp && !allowed.SameAs(wanted))
             {
-                MatchConfigurationResult check = updated.ToConfiguration(count);
-                if (!check.IsValid)
-                {
-                    HostNotice?.Invoke("Ne mogu tako: " + check.Error);
-                    return;
-                }
+                HostNotice?.Invoke(ClampNotice(allowed, wanted));
             }
 
-            _hostSetup = updated;
-            _setup.Value = MatchSetupSnapshot.From(updated);
+            if (allowed.SameAs(_hostSetup))
+            {
+                return;
+            }
+
+            _hostSetup = allowed;
+            _setup.Value = MatchSetupSnapshot.From(allowed);
             StateChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// The size the setup rules are judged against. Below the minimum the lobby is still filling
+        /// up, so it is judged against the minimum — otherwise a lone host would see every option
+        /// switch itself off before anyone had a chance to join.
+        /// </summary>
+        private int LobbySizeForRules()
+        {
+            int count = NetworkManager != null ? NetworkManager.ConnectedClientsIds.Count : 0;
+            return count < MatchConfiguration.MinPlayers ? MatchConfiguration.MinPlayers : count;
+        }
+
+        private string ClampNotice(MatchSetup allowed, MatchSetup wanted)
+        {
+            if (wanted.IncludeDetective && !allowed.IncludeDetective)
+            {
+                return $"Detektiv je isključen: treba bar " +
+                       $"{MatchConfiguration.MinPlayersForBothSpecialRoles} igrača za obe specijalne uloge " +
+                       $"(a bar {MatchConfiguration.MinPlayersForSpecialRole} za jednu).";
+            }
+
+            if (wanted.IncludeDoctor && !allowed.IncludeDoctor)
+            {
+                return $"Doktor je isključen: specijalna uloga traži bar " +
+                       $"{MatchConfiguration.MinPlayersForSpecialRole} igrača.";
+            }
+
+            if (wanted.MafiaCount != allowed.MafiaCount)
+            {
+                return $"Broj mafija je smanjen na {allowed.MafiaCount}: mafija mora da bude u manjini.";
+            }
+
+            return "Podešavanje je prilagođeno broju igrača.";
         }
 
         /// <summary>Public alive/dead status of a seat.</summary>
@@ -301,6 +344,10 @@ namespace MafiaGame.Infrastructure.Networking
                     "onaj kome je veza pukla pokuša ponovo.");
                 return;
             }
+
+            // Trim once more against the real roster before dealing roles: the lobby may have shrunk
+            // since the last change, and starting must not fail on a setting the host cannot see.
+            ApplySetup(_hostSetup, explainClamp: false);
 
             MatchConfigurationResult config = _hostSetup.ToConfiguration(count);
             if (!config.IsValid)
@@ -486,9 +533,18 @@ namespace MafiaGame.Infrastructure.Networking
 
         private void PublishConnectedCount()
         {
-            if (IsServer && NetworkManager != null)
+            if (!IsServer || NetworkManager == null)
             {
-                _connectedCount.Value = NetworkManager.ConnectedClientsIds.Count;
+                return;
+            }
+
+            _connectedCount.Value = NetworkManager.ConnectedClientsIds.Count;
+
+            // The lobby just changed size, so a setting that is no longer playable switches itself
+            // off. Silent here: the host did not ask for this, and the summary shows the result.
+            if (!_matchRunning)
+            {
+                ApplySetup(_hostSetup, explainClamp: false);
             }
         }
 

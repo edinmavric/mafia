@@ -229,7 +229,7 @@ Trajanja (za sada fiksna, host ih još ne bira):
 - diskusija: **90s**
 - glasanje: **45s**
 
-### [ ] 1. Test cele partije sa 4 igrača
+### [x] 1. Test cele partije sa 4 igrača
 
 1. **Window → Multiplayer → Multiplayer Play Mode**, štikliraj **Player 2**, **Player 3**, **Player 4**.
 2. Klikni **Play** (▶), u **Player 1** klikni **Napravi igru (Host)**, u ostala tri ukucaj kod
@@ -294,3 +294,93 @@ Ako se pojavi **crvena** greška u **Console** panelu, prekopiraj je i pošalji 
 
 Napomena: sa **7+ igrača** možeš uključiti i Doktora i Detektiva — tada noć čeka sve tri uloge
 pre nego što se razreši.
+
+---
+
+## Milestone 4 (popravke podešavanja) — test
+
+Šta je popravljeno:
+
+1. **Dugmad za vreme se nisu videla** — kolona sa podešavanjima je bila preniska, pa su
+   „Noć / Diskusija / Glasanje" ostajali ispod ivice. Sada je kolona viša.
+2. **Nije moglo da se promeni Doktor/Detektiv/Otkrij ulogu** — sa 4 igrača su i Doktor i
+   Detektiv bili DA, što je nedozvoljeno, a **svaka** pojedinačna promena je i dalje bila
+   nedozvoljena, pa je sve odbijano. Sada se nedozvoljena opcija **sama isključi na NE**,
+   uz poruku zašto.
+3. **„Ne mogu da počnem"** — posledica istog problema; sada se podešavanje uskladi i pre
+   samog starta, pa partija kreće.
+
+### [ ] 1. Test sa 4 igrača
+
+1. **Window → Multiplayer → Multiplayer Play Mode**, štikliraj **Player 2**, **3**, **4**, pa **Play** (▶).
+2. U **Player 1**: **Napravi igru (Host)**, u ostalima ukucaj kod i **Pridruži se kodom**.
+   - Očekivano: čim se skupi 4 igrača, u redu sa pravilima piše **bez specijalnih uloga**
+     (Doktor i Detektiv su se sami isključili jer traže 5, odnosno 7 igrača).
+3. U **Player 1** klikni **Podešavanja partije**.
+   - Očekivano: otvori se poseban ekran preko lobija sa **svih 7** podešavanja, uključujući
+     **Noć: 45s**, **Diskusija: 90s**, **Glasanje: 45s**, i dugme **Sačuvaj i zatvori**.
+4. Klikni **Doktor: NE**.
+   - Očekivano: vrati se na **NE** i iznad dugmadi piše „Doktor je isključen: specijalna uloga traži bar 5 igrača."
+5. Klikni **Otkrij ulogu eliminisanog: DA**.
+   - Očekivano: prebaci se na **NE** (ovo podešavanje ne zavisi od broja igrača, mora da radi uvek).
+6. Klikni nekoliko puta **Noć: 45s** i **Glasanje: 45s**.
+   - Očekivano: brojevi se menjaju i **odmah se vide i kod ostalih igrača**.
+7. Klikni **Sačuvaj i zatvori**, pa **Počni partiju**.
+   - Očekivano: partija kreće (nema više „Ne mogu da počnem"), i noć traje koliko si postavio.
+
+---
+
+## Milestone 4 (build) — test sa 5+ igrača
+
+Zašto: **Multiplayer Play Mode ide najviše do 4 igrača**, a Doktor traži bar **5**, a Detektiv
+(uz Doktora) bar **7**. Zato pravimo običan program (build) i pokrećemo ga više puta. Standalone
+prozor nema Editor u sebi, pa je znatno lakši za laptop od MPPM virtuelnog igrača.
+
+Napravio sam ti dugme u meniju da ne moraš svaki put da biraš folder.
+
+### [ ] 1. Build jednim klikom (uvek u isti folder)
+
+1. U Unity-ju gore u meniju klikni **MafiaGame → Build dev player (Linux)**.
+2. Sačekaj (prvi put ume da traje par minuta). Dole u **Console** panelu se pojavi
+   `[DevBuild] Build ready: /home/<ti>/MafiaBuild/Mafia.x86_64`.
+
+- Uvek ide u **isti** folder `~/MafiaBuild` i **prepisuje** stari build. Nema dijaloga,
+  nema biranja, nema gomilanja starih verzija.
+- Build je **van** projekta, pa ne može slučajno da uđe u git.
+- Posle svake promene koda samo ponovo klikni isto dugme.
+
+### [ ] 2. Pokreni 6 igrača jednim klikom
+
+1. Klikni **MafiaGame → Build and launch 6 players** (build + pokretanje odjednom),
+   ili **MafiaGame → Launch 6 players (no rebuild)** ako si već build-ovao.
+2. Otvoriće se 6 malih prozora (640x480). Rasporedi ih po ekranu.
+
+Ako ti je draži Terminal, radi i ovako:
+
+```bash
+cd ~/MafiaBuild
+for i in 1 2 3 4 5 6; do ./Mafia.x86_64 -screen-width 640 -screen-height 480 -screen-fullscreen 0 & sleep 2; done
+```
+
+Da zatvoriš sve odjednom: `pkill -f Mafia.x86_64`
+
+### [ ] 3. Odigraj partiju sa 6 igrača
+
+1. U **jednom** prozoru klikni **Napravi igru (Host)** → zapamti kod.
+2. U ostalih 5 ukucaj kod i klikni **Pridruži se kodom**.
+   - Očekivano: svuda piše **Igrači (6)** i **Mrežno povezano: 6 igrača**.
+   - Očekivano: u pravilima se sam pojavi **Doktor** (ima 5+ igrača), ali **ne i Detektiv**
+     (za oba treba 7).
+3. U host prozoru klikni **Podešavanja partije** pa proveri vrednosti, zatim **Sačuvaj i zatvori**.
+4. Klikni **Počni partiju**.
+   - Očekivano: jedan igrač je **Mafija**, jedan **Doktor**, ostali **Građani**.
+5. U noći: Mafija klikne metu, **Doktor klikne koga štiti** (može i sebe).
+   - Očekivano: noć se razreši tek **kad su odigrali oboje** — ne čeka se ostatak tajmera.
+   - Očekivano: ako je Doktor zaštitio baš metu mafije, niko ne umire.
+6. Odigraj do kraja partije.
+
+Napomena: build namerno uzima **samo `Lobby` scenu**. Ranije je build pokretao
+`LocalPrototype` (pisalo je „MafiaGame — lokalni prototip (DEV)") jer je taj prototip prvi
+u listi scena u Build Settings — sada to više ne može da se desi.
+
+Ako se pojavi crvena greška u **Console** panelu ili prozor pukne, javi mi šta piše.

@@ -57,3 +57,7 @@ crashlytics-build.properties
 *.env
 .env
 secrets*.json
+
+# ==== Build output (never committed; see OWNER_ACTION.md) ====
+/[Bb]uild/
+/[Bb]uilds/

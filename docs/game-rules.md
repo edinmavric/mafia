@@ -92,9 +92,13 @@ The following are intentionally deferred and recorded here so they are not lost:
   Still deferred: the **30-second tie-breaker defense window**.
 - **Lobby settings.** **Status: DONE.** The host picks Mafia count, Doctor, Detective, role reveal,
   and the night / discussion / voting durations in the lobby; `MatchSetup` (engine-free, immutable)
-  carries the choices and `MatchConfiguration` still decides whether they are legal. An illegal
-  setup is reported to the host, never silently repaired. Settings can only change **before** the
-  match starts. The agreed setup is replicated so every player sees the rules before they play —
+  carries the choices and `MatchConfiguration` still decides whether they are legal. Options the
+  lobby is too small for are **switched off automatically** (`MatchSetup.ClampTo`, owner decision
+  2026-07-20) with a notice to the host — refusing each edit instead left a small lobby permanently
+  stuck, because every individual change was still illegal on its own. The Detective is dropped
+  before the Doctor, and the Mafia count only as far as it must be. The setup is re-clamped whenever
+  the lobby changes size and once more just before roles are dealt. Settings can only change
+  **before** the match starts. The agreed setup is replicated so every player sees the rules before they play —
   counts, flags and durations only, no role data.
   Not exposed in the UI (still the defaults): role-reveal duration 10 s and announcement duration 8 s.
 - **Match runs inside the `Lobby` scene.** No dedicated `Game` scene and no networked scene
