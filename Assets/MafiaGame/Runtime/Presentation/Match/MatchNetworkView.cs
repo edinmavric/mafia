@@ -38,6 +38,29 @@ namespace MafiaGame.Presentation.Match
         private Button _resolveVoteButton;
         private Transform _nightRow;
 
+        // Host-only lobby settings.
+        private Transform _setupRow;
+        private GameObject _setupRoot;
+        private Button _mafiaCountButton;
+        private Button _doctorButton;
+        private Button _detectiveButton;
+        private Button _revealButton;
+        private Button _nightSecondsButton;
+        private Button _discussionSecondsButton;
+        private Button _votingSecondsButton;
+
+        // Ranges the lobby buttons cycle through. Kept here because they are a UI convenience;
+        // the authoritative bounds live in MatchTimings.
+        private const double MinNight = 15d;
+        private const double MaxNight = 120d;
+        private const double NightStep = 15d;
+        private const double MinDiscussion = 30d;
+        private const double MaxDiscussion = 300d;
+        private const double DiscussionStep = 30d;
+        private const double MinVoting = 15d;
+        private const double MaxVoting = 120d;
+        private const double VotingStep = 15d;
+
         private Role _localRole = Role.Citizen;
         private bool _hasRole;
 
@@ -105,7 +128,11 @@ namespace MafiaGame.Presentation.Match
             }
 
             int count = _controller.ConnectedCount;
-            return $"Mrežno povezano: {count} igrača (za partiju treba najmanje {MatchConfiguration.MinPlayers})";
+            string line =
+                $"Mrežno povezano: {count} igrača (za partiju treba najmanje {MatchConfiguration.MinPlayers})";
+
+            // Everyone sees the agreed rules before the match — counts and durations only, no roles.
+            return line + "\n" + _controller.Setup.Describe();
         }
 
         private void OnRoleReceived(PrivateRoleInfo info)
@@ -274,10 +301,97 @@ namespace MafiaGame.Presentation.Match
 
         private void OnHostNotice(string message) => _resultText.text = message;
 
+        /// <summary>
+        /// Builds the host's lobby settings. Each control is one button that cycles through its
+        /// allowed values and wraps around — a placeholder that cannot produce an illegal setup and
+        /// needs no typing. The host still owns the truth; these only send the change.
+        /// </summary>
+        private void BuildSetupControls()
+        {
+            _mafiaCountButton = CreateSetupButton(() => _controller?.HostChangeSetup(NextMafiaCount));
+            _doctorButton = CreateSetupButton(() =>
+                _controller?.HostChangeSetup(setup => setup.WithDoctor(!setup.IncludeDoctor)));
+            _detectiveButton = CreateSetupButton(() =>
+                _controller?.HostChangeSetup(setup => setup.WithDetective(!setup.IncludeDetective)));
+            _revealButton = CreateSetupButton(() =>
+                _controller?.HostChangeSetup(setup => setup.WithRoleReveal(!setup.RevealRoleOnElimination)));
+
+            _nightSecondsButton = CreateSetupButton(() => _controller?.HostChangeSetup(setup =>
+                setup.WithNightSeconds(Cycle(setup.Timings.NightSeconds, MinNight, MaxNight, NightStep))));
+            _discussionSecondsButton = CreateSetupButton(() => _controller?.HostChangeSetup(setup =>
+                setup.WithDiscussionSeconds(
+                    Cycle(setup.Timings.DiscussionSeconds, MinDiscussion, MaxDiscussion, DiscussionStep))));
+            _votingSecondsButton = CreateSetupButton(() => _controller?.HostChangeSetup(setup =>
+                setup.WithVotingSeconds(Cycle(setup.Timings.VotingSeconds, MinVoting, MaxVoting, VotingStep))));
+        }
+
+        private Button CreateSetupButton(UnityEngine.Events.UnityAction onClick)
+        {
+            Button button = UiFactory.CreateButton(_setupRow, string.Empty);
+            button.onClick.AddListener(onClick);
+            return button;
+        }
+
+        /// <summary>Steps a duration up, wrapping back to the minimum once past the maximum.</summary>
+        private static double Cycle(double current, double min, double max, double step)
+        {
+            double next = current + step;
+            return next > max ? min : next;
+        }
+
+        /// <summary>
+        /// Steps the Mafia count up, wrapping at whatever the current lobby size allows. With too few
+        /// players connected to know the limit yet, it wraps at the smallest maximum.
+        /// </summary>
+        private MatchSetup NextMafiaCount(MatchSetup setup)
+        {
+            int players = _controller != null ? _controller.ConnectedCount : 0;
+            int max = MatchConfiguration.MaxMafiaFor(
+                players >= MatchConfiguration.MinPlayers ? players : MatchConfiguration.MinPlayers);
+            int next = setup.MafiaCount + 1;
+            return setup.WithMafiaCount(next > max ? 1 : next);
+        }
+
+        private static string YesNo(bool value) => value ? "DA" : "NE";
+
+        private void RefreshSetupLabels()
+        {
+            if (_controller == null)
+            {
+                return;
+            }
+
+            MatchSetup setup = _controller.Setup;
+            SetLabel(_mafiaCountButton, $"Mafija: {setup.MafiaCount}");
+            SetLabel(_doctorButton, $"Doktor: {YesNo(setup.IncludeDoctor)}");
+            SetLabel(_detectiveButton, $"Detektiv: {YesNo(setup.IncludeDetective)}");
+            SetLabel(_revealButton, $"Otkrij ulogu eliminisanog: {YesNo(setup.RevealRoleOnElimination)}");
+            SetLabel(_nightSecondsButton, $"Noć: {setup.Timings.NightSeconds:0}s");
+            SetLabel(_discussionSecondsButton, $"Diskusija: {setup.Timings.DiscussionSeconds:0}s");
+            SetLabel(_votingSecondsButton, $"Glasanje: {setup.Timings.VotingSeconds:0}s");
+        }
+
+        private static void SetLabel(Button button, string text)
+        {
+            TextMeshProUGUI label = button.GetComponentInChildren<TextMeshProUGUI>();
+            if (label != null)
+            {
+                label.text = text;
+            }
+        }
+
         private void RefreshHostControls()
         {
             bool host = _controller != null && _controller.IsHostPeer;
             MatchPhase phase = _controller != null ? _controller.CurrentPhase : MatchPhase.Lobby;
+
+            // Settings are the host's, and only before the match: changing the rules mid-game would
+            // move the goalposts on players who already know their roles.
+            _setupRoot.SetActive(host && phase == MatchPhase.Lobby);
+            if (_setupRoot.activeSelf)
+            {
+                RefreshSetupLabels();
+            }
 
             _startButton.gameObject.SetActive(host && phase == MatchPhase.Lobby);
             _confirmButton.gameObject.SetActive(host && phase == MatchPhase.RoleReveal);
@@ -446,6 +560,12 @@ namespace MafiaGame.Presentation.Match
 
             _nightRow = UiFactory.CreateScrollColumn(canvas.transform, "NightRow",
                 new Vector2(0.55f, 0.04f), new Vector2(0.95f, 0.42f));
+
+            // Lobby settings share the right column: it is empty until a match starts anyway.
+            _setupRow = UiFactory.CreateScrollColumn(canvas.transform, "SetupRow",
+                new Vector2(0.55f, 0.04f), new Vector2(0.95f, 0.42f));
+            _setupRoot = _setupRow.parent.gameObject; // toggle the whole scroll view, not just its content
+            BuildSetupControls();
 
             RefreshHostControls();
         }

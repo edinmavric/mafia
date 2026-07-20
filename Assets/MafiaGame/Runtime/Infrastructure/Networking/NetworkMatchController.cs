@@ -64,7 +64,18 @@ namespace MafiaGame.Infrastructure.Networking
         private readonly NetworkVariable<double> _phaseEndsAt = new NetworkVariable<double>(
             NoDeadline, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
+        // The host's lobby setup, replicated so every player sees the agreed rules before the match.
+        // Public information only: counts, flags and durations, never a role assignment.
+        private readonly NetworkVariable<MatchSetupSnapshot> _setup =
+            new NetworkVariable<MatchSetupSnapshot>(
+                MatchSetupSnapshot.From(MatchSetup.Default),
+                NetworkVariableReadPermission.Everyone,
+                NetworkVariableWritePermission.Server);
+
         private const double NoDeadline = -1d;
+
+        /// <summary>Server-side source of truth for the setup; clients only mirror it for display.</summary>
+        private MatchSetup _hostSetup = MatchSetup.Default;
 
         /// <summary>True once the host has dealt roles; gates the server-side phase clock.</summary>
         private bool _matchRunning;
@@ -127,6 +138,44 @@ namespace MafiaGame.Infrastructure.Networking
             }
         }
 
+        /// <summary>The agreed lobby setup, as every player sees it.</summary>
+        public MatchSetup Setup => IsServer ? _hostSetup : _setup.Value.ToSetup();
+
+        /// <summary>
+        /// Applies a lobby change. Host only, and only before the match starts — a setup change
+        /// mid-match would rewrite rules the players are already playing under. The caller passes a
+        /// transform so every edit goes through the same validation and replication path.
+        /// </summary>
+        public void HostChangeSetup(Func<MatchSetup, MatchSetup> change)
+        {
+            if (!IsServer || _matchRunning || change == null)
+            {
+                return;
+            }
+
+            MatchSetup updated = change(_hostSetup);
+            if (updated == null)
+            {
+                return;
+            }
+
+            // Reject a setup the current lobby cannot play instead of starting and failing later.
+            int count = NetworkManager != null ? NetworkManager.ConnectedClientsIds.Count : 0;
+            if (count >= MatchConfiguration.MinPlayers)
+            {
+                MatchConfigurationResult check = updated.ToConfiguration(count);
+                if (!check.IsValid)
+                {
+                    HostNotice?.Invoke("Ne mogu tako: " + check.Error);
+                    return;
+                }
+            }
+
+            _hostSetup = updated;
+            _setup.Value = MatchSetupSnapshot.From(updated);
+            StateChanged?.Invoke();
+        }
+
         /// <summary>Public alive/dead status of a seat.</summary>
         public bool IsSeatAlive(int seat) => (_aliveMask.Value & (1 << seat)) != 0;
 
@@ -161,6 +210,7 @@ namespace MafiaGame.Infrastructure.Networking
             _votesCast.OnValueChanged += HandleStateChanged;
             _playerCount.OnValueChanged += HandleStateChanged;
             _outcome.OnValueChanged += HandleOutcomeChanged;
+            _setup.OnValueChanged += HandleSetupChanged;
             if (IsServer && NetworkManager != null)
             {
                 NetworkManager.OnClientDisconnectCallback += OnClientDisconnect;
@@ -180,6 +230,7 @@ namespace MafiaGame.Infrastructure.Networking
             _votesCast.OnValueChanged -= HandleStateChanged;
             _playerCount.OnValueChanged -= HandleStateChanged;
             _outcome.OnValueChanged -= HandleOutcomeChanged;
+            _setup.OnValueChanged -= HandleSetupChanged;
             if (IsServer && NetworkManager != null)
             {
                 NetworkManager.OnClientDisconnectCallback -= OnClientDisconnect;
@@ -251,13 +302,7 @@ namespace MafiaGame.Infrastructure.Networking
                 return;
             }
 
-            // Temporary auto-config until a lobby settings UI exists (deferred): one Mafia, special
-            // roles only when the lobby is large enough, role reveal on for easy testing.
-            int mafiaCount = 1;
-            bool includeDoctor = count >= MatchConfiguration.MinPlayersForSpecialRole;
-            bool includeDetective = count >= MatchConfiguration.MinPlayersForBothSpecialRoles;
-            MatchConfigurationResult config = MatchConfiguration.Create(
-                count, mafiaCount, includeDoctor, includeDetective, revealRoleOnElimination: true);
+            MatchConfigurationResult config = _hostSetup.ToConfiguration(count);
             if (!config.IsValid)
             {
                 HostNotice?.Invoke($"Ne mogu da počnem: {config.Error}");
@@ -273,7 +318,8 @@ namespace MafiaGame.Infrastructure.Networking
             }
 
             int seed = Guid.NewGuid().GetHashCode();
-            IReadOnlyList<PrivateRoleInfo> payloads = _authority.StartMatch(count, config.Configuration, seed);
+            IReadOnlyList<PrivateRoleInfo> payloads =
+                _authority.StartMatch(count, config.Configuration, seed, _hostSetup.Timings);
             _playerCount.Value = count;
 
             foreach (PrivateRoleInfo payload in payloads)
@@ -492,6 +538,9 @@ namespace MafiaGame.Infrastructure.Networking
         private void HandleStateChanged(int previous, int current) => StateChanged?.Invoke();
 
         private void HandleOutcomeChanged(GameOutcome previous, GameOutcome current) => StateChanged?.Invoke();
+
+        private void HandleSetupChanged(MatchSetupSnapshot previous, MatchSetupSnapshot current) =>
+            StateChanged?.Invoke();
 
         /// <summary>Publishes the public alive/dead status and the win outcome. Server only.</summary>
         private void PublishAliveAndOutcome()

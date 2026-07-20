@@ -254,3 +254,43 @@ Ako se pojavi **crvena** greška u **Console** panelu, prekopiraj je i pošalji 
 
 Napomena (pošteno): pravila tajmera su pokrivena automatskim testovima (13 novih), ali kako se
 odbrojavanje ponaša **uživo preko mreže** NISAM mogao da proverim — to je ovaj tvoj test.
+
+---
+
+## Milestone 4 (podešavanja) — host bira pravila u lobiju
+
+Cilj: pre početka partije host bira broj mafija, da li igraju Doktor i Detektiv, da li se
+otkriva uloga eliminisanog, i trajanja faza. **Ništa se ne povezuje u Editoru** — samo test.
+
+Kako izgleda: kad si **host** i još niste počeli, desno se pojavi kolona dugmadi. Svako dugme
+je jedno podešavanje i **klik ga menja u sledeću vrednost** (kad dođe do kraja, vrati se na
+početak). Nema kucanja.
+
+- **Mafija: 1** → klik povećava, do maksimuma za trenutan broj igrača, pa nazad na 1.
+- **Doktor: DA/NE**, **Detektiv: DA/NE**, **Otkrij ulogu eliminisanog: DA/NE** → klik prebacuje.
+- **Noć: 45s** (korak 15s), **Diskusija: 90s** (korak 30s), **Glasanje: 45s** (korak 15s).
+
+Podsetnik na pravila: specijalna uloga traži bar **5** igrača, a **obe** traže bar **7**.
+
+### [ ] 1. Test podešavanja sa 4 igrača
+
+1. **Window → Multiplayer → Multiplayer Play Mode**, štikliraj **Player 2**, **Player 3**, **Player 4**.
+2. Klikni **Play** (▶), u **Player 1** klikni **Napravi igru (Host)**, u ostala tri ukucaj kod
+   i klikni **Pridruži se kodom**.
+3. Pogledaj **Player 2** (običan igrač).
+   - Očekivano: vidi red sa pravilima („Mafija: 1 | … | Noć 45s | Diskusija 90s | Glasanje 45s"),
+     ali **nema** dugmad za podešavanja — njih ima samo host.
+4. U **Player 1** klikni nekoliko puta **Noć: 45s**.
+   - Očekivano: broj se menja (60s, 75s, …), i **istovremeno se menja** i kod ostalih igrača.
+5. U **Player 1** klikni **Doktor: DA** i **Detektiv: DA** dok oba ne budu **DA**.
+   - Očekivano (sa samo 4 igrača): dole se pojavi poruka „Ne mogu tako: …" jer specijalne uloge
+     traže više igrača. To je ispravno ponašanje — podešavanje se ne primeni.
+6. Postavi **Doktor: NE**, **Detektiv: NE**, **Mafija: 1**, pa klikni **Počni partiju**.
+   - Očekivano: partija kreće i noć traje onoliko koliko si postavio.
+7. Kad partija počne, pogledaj desnu kolonu.
+   - Očekivano: dugmad za podešavanja su **nestala** (pravila se ne menjaju usred partije).
+
+Ako se pojavi **crvena** greška u **Console** panelu, prekopiraj je i pošalji mi.
+
+Napomena: sa **7+ igrača** možeš uključiti i Doktora i Detektiva — tada noć čeka sve tri uloge
+pre nego što se razreši.

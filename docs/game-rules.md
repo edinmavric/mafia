@@ -87,16 +87,16 @@ The following are intentionally deferred and recorded here so they are not lost:
   intents arrived, and voting tallies whatever votes were cast (abstention is allowed). A phase also
   ends early once every living, connected player who owes an action has given it (see "Day / voting").
   The host buttons remain as manual "skip this phase" controls.
-  Current durations are the fixed defaults in `MatchTimings.Default`: reveal 10 s, night 45 s,
-  announcement 8 s, discussion 90 s, voting 45 s.
-  Still deferred: **letting the host choose the durations in the lobby** (`MatchTimings.Create`
-  already validates host input, but no UI feeds it yet) and the **30-second tie-breaker defense
-  window**.
-- **Temporary auto-config (no lobby-settings UI yet).** `NetworkMatchController.HostStartMatch`
-  currently derives the match config automatically: **1 Mafia**, Doctor only when ≥ 5 players,
-  Detective only when ≥ 7 players, and **role reveal ON** (for easy testing). The host cannot yet
-  choose Mafia count / special roles / reveal from UI. A lobby-settings screen that lets the host
-  pick these (within the confirmed limits above) is deferred.
+  Defaults are in `MatchTimings.Default`: reveal 10 s, night 45 s, announcement 8 s, discussion 90 s,
+  voting 45 s. The host can change night / discussion / voting in the lobby (see "Lobby settings").
+  Still deferred: the **30-second tie-breaker defense window**.
+- **Lobby settings.** **Status: DONE.** The host picks Mafia count, Doctor, Detective, role reveal,
+  and the night / discussion / voting durations in the lobby; `MatchSetup` (engine-free, immutable)
+  carries the choices and `MatchConfiguration` still decides whether they are legal. An illegal
+  setup is reported to the host, never silently repaired. Settings can only change **before** the
+  match starts. The agreed setup is replicated so every player sees the rules before they play —
+  counts, flags and durations only, no role data.
+  Not exposed in the UI (still the defaults): role-reveal duration 10 s and announcement duration 8 s.
 - **Match runs inside the `Lobby` scene.** No dedicated `Game` scene and no networked scene
   transition yet; the slice reuses the lobby scene. A proper scene flow is deferred.
 - **Seed source.** The host picks a non-predictable seed (`Guid.NewGuid().GetHashCode()`) so
@@ -110,5 +110,4 @@ The following are intentionally deferred and recorded here so they are not lost:
 ## Still open (not needed until later milestones)
 - Whether dead players can speak / spectate (voice & presentation).
 - Reconnect grace period, host migration, lobby code format (networking).
-- Discussion / night / voting durations chosen by the host (the timer itself now exists; only the
-  lobby settings screen that feeds it is missing).
+- Role-reveal and announcement durations in the lobby UI (currently fixed at the defaults).
