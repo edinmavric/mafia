@@ -268,5 +268,101 @@ namespace MafiaGame.Tests.EditMode
 
             CollectionAssert.IsEmpty(authority.TickAbsence(NetworkedMatchAuthority.AbandonAfterSeconds));
         }
+
+        [Test]
+        public void TheMatchEndsAtTwoPlayers_WithTheWinnerTheRulesName()
+        {
+            (NetworkedMatchAuthority authority, IReadOnlyList<PrivateRoleInfo> payloads) = Start();
+            int mafia = SeatOf(payloads, Role.Mafia);
+
+            // Everyone leaves except the Mafia and one villager: parity, so the match is settled.
+            int survivor = payloads.First(p => p.Seat != mafia).Seat;
+            foreach (int seat in payloads.Select(p => p.Seat).Where(s => s != mafia && s != survivor))
+            {
+                authority.MarkDisconnected(seat);
+            }
+
+            authority.TickAbsence(NetworkedMatchAuthority.AbandonAfterSeconds);
+
+            Assert.AreEqual(2, authority.AliveSeats().Count);
+            Assert.AreEqual(MatchPhase.GameOver, authority.CurrentPhase);
+
+            // Stopping early must not rob the Mafia of the win they already had.
+            Assert.AreEqual(GameOutcome.MafiaWins, authority.Outcome);
+            Assert.IsFalse(authority.HasDeadline, "A finished match has no clock left to run.");
+        }
+
+        [Test]
+        public void TwoVillagersLeft_EndsTheMatchAsATownWin()
+        {
+            (NetworkedMatchAuthority authority, IReadOnlyList<PrivateRoleInfo> payloads) = Start();
+            List<int> citizens = CitizenSeats(payloads);
+
+            // The Mafia is among those who walk out, so no Mafia are left at all.
+            foreach (int seat in payloads.Select(p => p.Seat)
+                         .Where(s => s != citizens[0] && s != citizens[1]))
+            {
+                authority.MarkDisconnected(seat);
+            }
+
+            authority.TickAbsence(NetworkedMatchAuthority.AbandonAfterSeconds);
+
+            Assert.AreEqual(MatchPhase.GameOver, authority.CurrentPhase);
+            Assert.AreEqual(GameOutcome.TownWins, authority.Outcome);
+        }
+
+        [Test]
+        public void AnEmptyTable_IsRecordedAsAbandonedRatherThanATownWin()
+        {
+            (NetworkedMatchAuthority authority, IReadOnlyList<PrivateRoleInfo> payloads) = Start();
+            foreach (int seat in payloads.Select(p => p.Seat))
+            {
+                authority.MarkDisconnected(seat);
+            }
+
+            authority.TickAbsence(NetworkedMatchAuthority.AbandonAfterSeconds);
+
+            // With nobody alive the win rule would still say "no Mafia remain, Town wins". That is
+            // an artefact, not a result: nobody was there to win it.
+            Assert.AreEqual(MatchPhase.GameOver, authority.CurrentPhase);
+            Assert.AreEqual(GameOutcome.Abandoned, authority.Outcome);
+        }
+
+        [Test]
+        public void ThreePlayersLeft_IsStillAPlayableMatch()
+        {
+            (NetworkedMatchAuthority authority, IReadOnlyList<PrivateRoleInfo> payloads) = Start();
+            int mafia = SeatOf(payloads, Role.Mafia);
+            List<int> citizens = CitizenSeats(payloads);
+
+            // Four of seven leave; the Mafia and two villagers play on.
+            foreach (int seat in payloads.Select(p => p.Seat)
+                         .Where(s => s != mafia && s != citizens[0] && s != citizens[1]))
+            {
+                authority.MarkDisconnected(seat);
+            }
+
+            authority.TickAbsence(NetworkedMatchAuthority.AbandonAfterSeconds);
+
+            Assert.AreEqual(3, authority.AliveSeats().Count);
+            Assert.AreEqual(MatchPhase.Night, authority.CurrentPhase);
+            Assert.AreEqual(GameOutcome.None, authority.Outcome);
+        }
+
+        [Test]
+        public void ABlinkedConnection_DoesNotEndTheMatch()
+        {
+            (NetworkedMatchAuthority authority, IReadOnlyList<PrivateRoleInfo> payloads) = Start();
+            foreach (int seat in payloads.Select(p => p.Seat).Skip(1))
+            {
+                authority.MarkDisconnected(seat);
+            }
+
+            // Still inside the grace period: they are absent, not gone.
+            authority.TickAbsence(NetworkedMatchAuthority.AbandonAfterSeconds - 1d);
+
+            Assert.AreEqual(MatchPhase.Night, authority.CurrentPhase);
+            Assert.AreEqual(GameOutcome.None, authority.Outcome);
+        }
     }
 }

@@ -171,11 +171,22 @@ The following are intentionally deferred and recorded here so they are not lost:
   contained two ways: a seat is handed over only while it is actually flagged disconnected, and never
   to a connection that already holds a seat. Hardening (a server-issued secret, or a trusted
   transport-level identity) is deferred.
+  **The match ends automatically once 2 or fewer players are alive** (`MinPlayersToContinue`, owner
+  decision 2026-07-21). Two players is already a settled game either way — two villagers means no
+  Mafia are left, and a Mafia against a villager is parity — so rather than let the match limp on to
+  the next resolution it is ended there and then. The winner is the one the **normal win condition**
+  names, so stopping early never takes a win away from anyone.
+  `GameOutcome.Abandoned` is reserved for the one case the rules cannot answer: **nobody left alive**.
+  The evaluator would still report a Town win there (no Mafia are alive), which is an artefact of the
+  rule rather than a result — nobody was there to win it. It credits no one and implies no role.
+  The check runs when a seat **forfeits**, never on a bare disconnect: a connection that blinked is
+  temporary until the grace period runs out, and ending a game nobody had actually left would be
+  worse than waiting. Because a match can now end from any phase, `MatchPhaseMachine` allows
+  `GameOver` from every active phase (not from the lobby — there is no match to end yet).
   A forfeit is announced as a **seat number only**, never a role, and it never ends the match on the
   spot: declaring "town wins" the instant the last Mafia's connection drops would reveal what that
   player was. The win is evaluated at the next natural resolution instead, at most one phase later.
-  Still deferred: surviving an application restart, and a host "end match if below minimum players"
-  control.
+  Still deferred: surviving an application restart.
 
 ## Still open (not needed until later milestones)
 - Whether dead players can speak / spectate (voice & presentation).

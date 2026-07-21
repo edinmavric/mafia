@@ -11,8 +11,10 @@ namespace MafiaGame.Domain.Matches
     /// The allowed transitions model only the structural flow of a match. They do
     /// NOT decide *why* the game ends (win-condition evaluation) or *how long* a
     /// phase lasts (authoritative timers) — those are separate concerns handled by
-    /// higher layers. Two resolution phases can lead to <see cref="MatchPhase.GameOver"/>
-    /// because eliminations there may satisfy a win condition.
+    /// higher layers. The resolution phases can lead to <see cref="MatchPhase.GameOver"/>
+    /// because eliminations there may satisfy a win condition; every other active phase
+    /// can too, because a match can be called off at any point once too few players are
+    /// left to play it. Only the lobby cannot, since there is no match to end yet.
     /// </summary>
     public sealed class MatchPhaseMachine
     {
@@ -20,17 +22,20 @@ namespace MafiaGame.Domain.Matches
             new Dictionary<MatchPhase, MatchPhase[]>
             {
                 { MatchPhase.Lobby, new[] { MatchPhase.RoleReveal } },
-                { MatchPhase.RoleReveal, new[] { MatchPhase.Night } },
-                { MatchPhase.Night, new[] { MatchPhase.NightResolution } },
+                { MatchPhase.RoleReveal, new[] { MatchPhase.Night, MatchPhase.GameOver } },
+                { MatchPhase.Night, new[] { MatchPhase.NightResolution, MatchPhase.GameOver } },
                 { MatchPhase.NightResolution, new[] { MatchPhase.DayAnnouncement, MatchPhase.GameOver } },
-                { MatchPhase.DayAnnouncement, new[] { MatchPhase.DayDiscussion } },
-                { MatchPhase.DayDiscussion, new[] { MatchPhase.Voting } },
-                { MatchPhase.Voting, new[] { MatchPhase.VotingResolution, MatchPhase.TieBreaker } },
+                { MatchPhase.DayAnnouncement, new[] { MatchPhase.DayDiscussion, MatchPhase.GameOver } },
+                { MatchPhase.DayDiscussion, new[] { MatchPhase.Voting, MatchPhase.GameOver } },
+                {
+                    MatchPhase.Voting,
+                    new[] { MatchPhase.VotingResolution, MatchPhase.TieBreaker, MatchPhase.GameOver }
+                },
 
                 // A tie sends the day into the defense window and back into voting for the revote.
                 // The revote's own tie ends the day through VotingResolution instead, so the loop
                 // cannot repeat: only the first tie of a day reaches TieBreaker.
-                { MatchPhase.TieBreaker, new[] { MatchPhase.Voting } },
+                { MatchPhase.TieBreaker, new[] { MatchPhase.Voting, MatchPhase.GameOver } },
                 { MatchPhase.VotingResolution, new[] { MatchPhase.Night, MatchPhase.GameOver } },
                 { MatchPhase.GameOver, System.Array.Empty<MatchPhase>() },
             };

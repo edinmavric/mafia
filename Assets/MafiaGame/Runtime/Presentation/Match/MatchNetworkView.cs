@@ -645,6 +645,7 @@ namespace MafiaGame.Presentation.Match
         {
             GameOutcome.TownWins => "pobedio je grad",
             GameOutcome.MafiaWins => "pobedila je mafija",
+            GameOutcome.Abandoned => "partija je prekinuta (premalo igrača)",
             _ => "nerešeno"
         };
 

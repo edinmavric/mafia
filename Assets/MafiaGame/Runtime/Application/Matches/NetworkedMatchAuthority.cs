@@ -47,6 +47,15 @@ namespace MafiaGame.Application.Matches
         /// </summary>
         public const double AbandonAfterSeconds = 30d;
 
+        /// <summary>
+        /// Fewer living players than this and the match is over (owner decision, 2026-07-21). Two
+        /// players is already a settled game either way: two villagers means no Mafia are left, and
+        /// a Mafia against a villager is parity. Rather than let the match limp on until the next
+        /// resolution, it is ended there and then — with the winner the win condition names, so
+        /// stopping early never takes a win away from anyone.
+        /// </summary>
+        public const int MinPlayersToContinue = 3;
+
         // Seat -> seconds left before the absent player is removed from the match.
         private readonly Dictionary<int, double> _absenceRemaining = new Dictionary<int, double>();
 
@@ -376,6 +385,18 @@ namespace MafiaGame.Application.Matches
 
             forfeited.Sort();
             DropOrphanedIntents();
+
+            // Those departures may have left too few players for the match to go on. Checked here
+            // rather than on every disconnect on purpose: a disconnect is temporary until the grace
+            // period runs out, and ending the match the moment someone's connection blinked would
+            // finish games nobody had actually left.
+            if (CurrentPhase != MatchPhase.GameOver && AliveSeats().Count < MinPlayersToContinue)
+            {
+                _driver.EndMatchEarly();
+                _timerArmed = false;
+                _remainingSeconds = 0d;
+            }
+
             return forfeited;
         }
 

@@ -347,6 +347,14 @@ namespace MafiaGame.Infrastructure.Networking
                 {
                     PlayerLeftClientRpc(seat);
                 }
+
+                // Those departures may have emptied the table, in which case the authority has
+                // already called the match off and the clients need to be told it is over.
+                if (_authority.CurrentPhase == MatchPhase.GameOver)
+                {
+                    PublishPhase();
+                    return;
+                }
             }
 
             switch (_authority.Tick(delta))

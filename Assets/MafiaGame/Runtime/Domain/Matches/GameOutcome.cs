@@ -5,6 +5,13 @@ namespace MafiaGame.Domain.Matches
     {
         None,
         TownWins,
-        MafiaWins
+        MafiaWins,
+
+        /// <summary>
+        /// The match was called off because too few players were left to play it, not won by anyone.
+        /// Appended rather than inserted: the values are replicated, so shifting them would silently
+        /// mean a different outcome to anything holding an older value.
+        /// </summary>
+        Abandoned
     }
 }

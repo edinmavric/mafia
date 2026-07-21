@@ -112,10 +112,31 @@ namespace MafiaGame.Tests.EditMode
         public void TheTieBreakerCannotSkipStraightToAResult()
         {
             // The defense settles nothing on its own: only a revote can eliminate or end the day.
+            // GameOver is not listed here — a match can be called off from any phase once too few
+            // players are left, which is not the defense producing a result.
             Assert.IsFalse(
                 MatchPhaseMachine.CanTransition(MatchPhase.TieBreaker, MatchPhase.VotingResolution));
-            Assert.IsFalse(MatchPhaseMachine.CanTransition(MatchPhase.TieBreaker, MatchPhase.GameOver));
             Assert.IsFalse(MatchPhaseMachine.CanTransition(MatchPhase.TieBreaker, MatchPhase.Night));
+        }
+
+        [Test]
+        public void AnyActivePhaseCanEndTheMatch_ButTheLobbyCannot()
+        {
+            // Abandonment can strike at any point in a running match.
+            foreach (MatchPhase phase in new[]
+                     {
+                         MatchPhase.RoleReveal, MatchPhase.Night, MatchPhase.NightResolution,
+                         MatchPhase.DayAnnouncement, MatchPhase.DayDiscussion, MatchPhase.Voting,
+                         MatchPhase.TieBreaker, MatchPhase.VotingResolution
+                     })
+            {
+                Assert.IsTrue(
+                    MatchPhaseMachine.CanTransition(phase, MatchPhase.GameOver),
+                    $"A match in {phase} must be able to end.");
+            }
+
+            // There is no match to end before one starts.
+            Assert.IsFalse(MatchPhaseMachine.CanTransition(MatchPhase.Lobby, MatchPhase.GameOver));
         }
     }
 }

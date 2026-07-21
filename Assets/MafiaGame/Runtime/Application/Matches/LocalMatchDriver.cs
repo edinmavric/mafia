@@ -217,6 +217,36 @@ namespace MafiaGame.Application.Matches
             return false;
         }
 
+        /// <summary>
+        /// Ends the match now because too few players are left to carry it on. The winner is still
+        /// decided by the normal win condition — with two players left the game is already settled
+        /// either way (two villagers means no Mafia remain; a Mafia against a villager is parity), so
+        /// stopping early must not rob anyone of a win they had earned.
+        ///
+        /// Only an empty table is recorded as <see cref="GameOutcome.Abandoned"/>: with nobody alive
+        /// the evaluator still reports a Town win, because no Mafia are alive — an artefact of the
+        /// rule rather than a result. Does nothing once the match is over.
+        /// </summary>
+        public void EndMatchEarly()
+        {
+            RequireMatch();
+            if (CurrentPhase == MatchPhase.GameOver)
+            {
+                return;
+            }
+
+            bool anyoneAlive = false;
+            foreach (PlayerState player in _match.AlivePlayers())
+            {
+                anyoneAlive = true;
+                break;
+            }
+
+            GameOutcome decided = _win.Evaluate(_match);
+            Outcome = anyoneAlive && decided != GameOutcome.None ? decided : GameOutcome.Abandoned;
+            Transition(MatchPhase.GameOver);
+        }
+
         private void EvaluateAndBranch(MatchPhase continuePhase)
         {
             Outcome = _win.Evaluate(_match);
