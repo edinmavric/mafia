@@ -101,17 +101,76 @@ The following are intentionally deferred and recorded here so they are not lost:
   **before** the match starts. The agreed setup is replicated so every player sees the rules before they play —
   counts, flags and durations only, no role data.
   Not exposed in the UI (still the defaults): role-reveal duration 10 s and announcement duration 8 s.
-- **Match runs inside the `Lobby` scene.** No dedicated `Game` scene and no networked scene
-  transition yet; the slice reuses the lobby scene. A proper scene flow is deferred.
+- **Match scene.** **Status: DONE.** The match now happens in its own `Game` scene, which the host
+  loads **additively** over the lobby through Netcode's scene manager the moment roles are dealt, and
+  unloads on the way back. Additive rather than a full scene switch (owner decision 2026-07-21): the
+  lobby scene is the network root — it holds the `NetworkManager` and the scene-placed
+  `NetworkMatchController` — so replacing it would mean tearing the authority down and rebuilding it
+  mid-session, for no gain the players can see. Netcode loads and unloads the scene on every peer at
+  once, and a client that joins mid-match is synchronised into it automatically.
+  The scene deliberately holds **no camera and no light** (the lobby scene has both) and no authored
+  geometry: a single `MatchEnvironment` component builds a placeholder floor, table and seat ring
+  from primitives at runtime, so the scene file stays trivial and cannot break a serialized
+  reference. The real environment is Milestone 6. If the scene fails to load, the match plays on over
+  the lobby background and only the host is told — the authority, not the scene, runs the game.
+  Create it with **MafiaGame → Create Game scene**; the tool also registers it in Build Settings,
+  which Netcode requires.
+- **Returning to the lobby after a match.** **Status: DONE** (owner decision 2026-07-21: on a
+  button, not automatically). At `GameOver` the host gets **"Nazad u lobi"**, which unloads the match
+  scene and puts everyone back on the lobby screen with the same join code, ready to play again. The
+  reset replaces the whole `NetworkedMatchAuthority` with a fresh instance rather than clearing it
+  field by field, so no leftover vote, night action or absence timer can survive into the next match;
+  every replicated value is reset with it, and each client drops its seat and role on the phase
+  returning to `Lobby`.
+  Still deferred: the match UI itself still lives on the lobby scene's canvas (it is a screen-space
+  overlay, so it draws over either scene). Splitting `MatchNetworkView` into a lobby part and a match
+  part, and moving the match part into the `Game` scene, is a later cleanup.
 - **Seed source.** The host picks a non-predictable seed (`Guid.NewGuid().GetHashCode()`) so
   clients cannot control or predict role assignment. This is NOT cryptographic; if stronger
   guarantees are needed later, revisit. Clients never receive or influence the seed.
-- **Disconnect during a match.** Confirmed behavior (owner): a disconnected player stays in the
-  roster but is treated as absent — a night action only they could supply is dropped so the night
-  still resolves, and their vote is not counted. **Rejoin, grace period, and a host "end match if
-  below minimum players" control are deferred.**
+- **Disconnect and rejoin during a match.** **Status: absence + forfeit DONE; rejoin NOT WORKING —
+  deferred to the end (owner decision 2026-07-21).** Two separate rules, and it matters
+  that they are not confused:
+  1. *Absence* — from the moment the connection drops the player is skipped. Nobody ever waits on
+     them: a night action only they could supply is dropped so the night still resolves, and their
+     vote is not counted. This was already true before the grace period existed.
+  2. *Forfeit* — if they have not returned within **30 seconds** (`AbandonAfterSeconds`, owner
+     decision 2026-07-20) they are removed from the match for good. This is an **elimination**, so
+     it can decide the game: a Mafia who drops and never returns hands the town the win 30 seconds
+     later. The countdown is driven by `TickAbsence(deltaSeconds)` — engine-free and unit-tested
+     without waiting.
+  **TODO (deferred to the very end of the project, owner decision 2026-07-21).** Returning in time
+  is *intended* to restore the same seat and the same role across a full application restart, but
+  live testing on 2026-07-21 showed the Relay/Sessions layer still **rejects the reconnect**, so a
+  returning player never gets back in and is forfeited at 30 s like anyone else. The code below is
+  in place and harmless — the two rules above are unaffected — but it must not be described as
+  working. When this is picked up again, start by capturing the exact SDK exception on the
+  returning client; the "already a member" path may not even be the one being hit. The rest of the
+  match loop continues without waiting on this. The intended design, for whoever resumes it:
+  1. *Sessions layer.* `RelayMatchSession` always tries a normal `JoinSessionByCodeAsync` first, so
+     a fresh join is never diverted. A dropped player is still a member of the Relay session for a
+     short while, so their fresh join is rejected with "player is already a member of the lobby";
+     only then does it reconnect — `GetJoinedSessionIdsAsync()` then `ReconnectToSessionAsync(id)`,
+     skipping any dead sessions left over from earlier games. (Reconnecting eagerly on every join was
+     tried first and dragged fresh joins into reconnecting to dead allocations — "Failed to join
+     allocation"; the join-first order is deliberate.)
+  2. *Game layer.* The seat is tied to the player's **Unity Authentication id** (stable per profile,
+     survives a restart). Every client announces its id to the host on connect (`IdentifyServerRpc`);
+     the host ties it to the seat when roles are dealt, and on return recognises the id and re-sends
+     the role — privately, to that one client.
+  Security (owner decision 2026-07-20, "identify by account"): the account id is a client-supplied,
+  publicly-visible claim, so this is **not spoof-proof** — a lobby member could in theory claim a
+  *disconnected* member's id to take their seat and role. Accepted for the private-friends MVP and
+  contained two ways: a seat is handed over only while it is actually flagged disconnected, and never
+  to a connection that already holds a seat. Hardening (a server-issued secret, or a trusted
+  transport-level identity) is deferred.
+  A forfeit is announced as a **seat number only**, never a role, and it never ends the match on the
+  spot: declaring "town wins" the instant the last Mafia's connection drops would reveal what that
+  player was. The win is evaluated at the next natural resolution instead, at most one phase later.
+  Still deferred: surviving an application restart, and a host "end match if below minimum players"
+  control.
 
 ## Still open (not needed until later milestones)
 - Whether dead players can speak / spectate (voice & presentation).
-- Reconnect grace period, host migration, lobby code format (networking).
+- Host migration, lobby code format (networking).
 - Role-reveal and announcement durations in the lobby UI (currently fixed at the defaults).

@@ -41,6 +41,15 @@ namespace MafiaGame.Application.Matches
 
         // Phase timer. Real time never enters this class: the host feeds elapsed seconds into Tick,
         // so a test can make a phase expire instantly instead of waiting for it.
+        /// <summary>
+        /// How long an absent player's seat is held before they are treated as gone for good
+        /// (owner decision, 2026-07-20). They can rejoin and take the seat back until it expires.
+        /// </summary>
+        public const double AbandonAfterSeconds = 30d;
+
+        // Seat -> seconds left before the absent player is removed from the match.
+        private readonly Dictionary<int, double> _absenceRemaining = new Dictionary<int, double>();
+
         private MatchTimings _timings = MatchTimings.Default;
         private double _remainingSeconds;
         private bool _timerArmed;
@@ -227,6 +236,7 @@ namespace MafiaGame.Application.Matches
             _playerCount = playerCount;
             _started = true;
             _disconnected.Clear();
+            _absenceRemaining.Clear();
             ClearNightIntents();
             _votesBySeat.Clear();
             _revoteCandidateSeats = null;
@@ -245,6 +255,25 @@ namespace MafiaGame.Application.Matches
             }
 
             return payloads;
+        }
+
+        /// <summary>
+        /// Rebuilds one seat's private payload. Used when a returning player has to be told their
+        /// role again — their client was gone when it was first dealt. Still private by construction:
+        /// the caller sends this to that seat alone.
+        /// </summary>
+        public PrivateRoleInfo RoleInfoFor(int seat)
+        {
+            RequireStarted();
+            if (seat < 0 || seat >= _playerCount)
+            {
+                throw new ArgumentOutOfRangeException(nameof(seat));
+            }
+
+            PlayerId id = SeatToPlayerId(seat);
+            Role role = _driver.RoleOf(id);
+            IReadOnlyList<int> teammates = role == Role.Mafia ? MafiaTeammateSeats(id) : Array.Empty<int>();
+            return new PrivateRoleInfo(seat, role, teammates);
         }
 
         /// <summary>Advances from role reveal into the night once every client has seen its role.</summary>
@@ -280,8 +309,77 @@ namespace MafiaGame.Application.Matches
             }
 
             _disconnected.Add(seat);
+            _absenceRemaining[seat] = AbandonAfterSeconds;
             DropOrphanedIntents();
         }
+
+        /// <summary>
+        /// Puts a returning player back in the game on the seat and role they had. Their pending
+        /// night intent is not restored — it was dropped when they left, and re-applying an action
+        /// nobody could still change would be a way to act twice.
+        /// </summary>
+        public void MarkReconnected(int seat)
+        {
+            if (!_started)
+            {
+                return;
+            }
+
+            _disconnected.Remove(seat);
+            _absenceRemaining.Remove(seat);
+        }
+
+        /// <summary>
+        /// Counts down the grace period of every absent player and returns the seats that just ran
+        /// out and were removed from the match. Separate from <see cref="Tick"/> because it answers a
+        /// different question: that one asks what the phase clock decided, this one who gave up.
+        ///
+        /// Note that nobody ever waits on an absent player — a disconnected seat stops being an
+        /// acting seat immediately. This timer only decides when they stop being a player at all.
+        /// </summary>
+        public IReadOnlyList<int> TickAbsence(double deltaSeconds)
+        {
+            if (!_started || deltaSeconds <= 0d || _absenceRemaining.Count == 0)
+            {
+                return Array.Empty<int>();
+            }
+
+            List<int> forfeited = null;
+            var seats = new List<int>(_absenceRemaining.Keys);
+            foreach (int seat in seats)
+            {
+                double remaining = _absenceRemaining[seat] - deltaSeconds;
+                if (remaining > 0d)
+                {
+                    _absenceRemaining[seat] = remaining;
+                    continue;
+                }
+
+                _absenceRemaining.Remove(seat);
+
+                // The seat is gone for good now, not merely absent. Clearing the disconnected flag
+                // keeps "disconnected" meaning "temporarily away and may return": a forfeited player
+                // who reconnects must not be handed their eliminated seat back.
+                _disconnected.Remove(seat);
+                if (_driver.ForfeitPlayer(SeatToPlayerId(seat)))
+                {
+                    (forfeited ??= new List<int>()).Add(seat);
+                }
+            }
+
+            if (forfeited == null)
+            {
+                return Array.Empty<int>();
+            }
+
+            forfeited.Sort();
+            DropOrphanedIntents();
+            return forfeited;
+        }
+
+        /// <summary>Seconds an absent player's seat is held before they are treated as gone.</summary>
+        public double AbsenceRemaining(int seat) =>
+            _absenceRemaining.TryGetValue(seat, out double remaining) ? remaining : 0d;
 
         /// <summary>
         /// Resolves the night from the stored intents and returns the public/private split. Intents

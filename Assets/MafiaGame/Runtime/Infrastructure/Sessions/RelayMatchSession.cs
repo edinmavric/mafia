@@ -63,8 +63,69 @@ namespace MafiaGame.Infrastructure.Sessions
             }
 
             TransportTuning.ApplyFastFailure();
-            ISession session = await MultiplayerService.Instance.JoinSessionByCodeAsync(code.Trim());
-            Bind(session);
+
+            // The normal path first. A fresh join must not be routed through a reconnect: a player
+            // still carrying a stale membership from an earlier game would otherwise be dragged into
+            // reconnecting to a dead Relay allocation ("Failed to join allocation") instead of simply
+            // joining the game they typed the code for.
+            try
+            {
+                ISession session = await MultiplayerService.Instance.JoinSessionByCodeAsync(code.Trim());
+                Bind(session);
+            }
+            catch (Exception exception) when (IsAlreadyMember(exception))
+            {
+                // Only a genuine returning player lands here: they dropped and are still listed in
+                // this session, so a fresh join is refused. Reconnecting puts them back into the same
+                // Relay allocation and the same running match.
+                await ReconnectToExistingSessionAsync();
+            }
+        }
+
+        /// <summary>
+        /// True when a join failed only because the player is still listed as a member of the
+        /// session — the whole exception chain is checked because the detail can arrive wrapped.
+        /// </summary>
+        private static bool IsAlreadyMember(Exception exception)
+        {
+            for (Exception current = exception; current != null; current = current.InnerException)
+            {
+                if (current.Message != null && current.Message.Contains("already a member"))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Reconnects to the live session this player is still a member of. A profile that has played
+        /// before may also be listed in older, dead sessions; those are skipped (their allocation is
+        /// gone) until the running one reconnects.
+        /// </summary>
+        private async Task ReconnectToExistingSessionAsync()
+        {
+            List<string> joined = await MultiplayerService.Instance.GetJoinedSessionIdsAsync();
+            if (joined != null)
+            {
+                foreach (string id in joined)
+                {
+                    try
+                    {
+                        ISession session = await MultiplayerService.Instance.ReconnectToSessionAsync(id);
+                        Bind(session);
+                        return;
+                    }
+                    catch (SessionException)
+                    {
+                        // A stale membership points at a dead allocation; try the next joined session.
+                    }
+                }
+            }
+
+            throw new InvalidOperationException(
+                "Već si član partije, ali ponovno povezivanje nije uspelo. Sačekaj koji sekund pa probaj ponovo.");
         }
 
         public async Task LeaveAsync()

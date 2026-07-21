@@ -25,6 +25,12 @@ namespace MafiaGame.EditorTools
         /// </summary>
         private const string LobbyScene = "Assets/MafiaGame/Content/Scenes/Lobby.unity";
 
+        /// <summary>
+        /// Loaded additively over the lobby while a match runs. It must be in the build even though
+        /// nothing starts in it — Netcode can only load scenes that were built in.
+        /// </summary>
+        private const string GameScene = GameSceneBuilder.GameScenePath;
+
         private const string OutputFolderName = "MafiaBuild";
         private const string ExecutableName = "Mafia.x86_64";
 
@@ -106,9 +112,23 @@ namespace MafiaGame.EditorTools
         {
             Directory.CreateDirectory(OutputFolder);
 
+            // The lobby must stay first: it is the scene the player starts in. The match scene is
+            // included only once it exists, so a build never fails just because it has not been
+            // created yet (MafiaGame → Create Game scene).
+            string[] scenes = File.Exists(GameScene)
+                ? new[] { LobbyScene, GameScene }
+                : new[] { LobbyScene };
+
+            if (!File.Exists(GameScene))
+            {
+                UnityEngine.Debug.LogWarning(
+                    "[DevBuild] Game scene not found; building without it. The match will run over " +
+                    "the lobby background. Create it with 'MafiaGame/Create Game scene'.");
+            }
+
             var options = new BuildPlayerOptions
             {
-                scenes = new[] { LobbyScene },
+                scenes = scenes,
                 locationPathName = ExecutablePath,
                 target = BuildTarget.StandaloneLinux64,
                 options = BuildOptions.Development

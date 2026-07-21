@@ -37,6 +37,7 @@ namespace MafiaGame.Presentation.Match
         private Button _discussButton;
         private Button _beginVoteButton;
         private Button _resolveVoteButton;
+        private Button _returnToLobbyButton;
         private Transform _nightRow;
 
         // Host-only lobby settings, shown as a sheet over the lobby.
@@ -94,6 +95,7 @@ namespace MafiaGame.Presentation.Match
             _controller.NightResolved += OnNightResolved;
             _controller.VotingResolved += OnVotingResolved;
             _controller.ConnectedCountChanged += OnConnectedCountChanged;
+            _controller.PlayerLeft += OnPlayerLeft;
             _controller.StateChanged += Render;
             _controller.DetectiveResultReceived += OnDetectiveResult;
             _controller.IntentRejected += OnIntentFeedback;
@@ -113,6 +115,7 @@ namespace MafiaGame.Presentation.Match
             _controller.NightResolved -= OnNightResolved;
             _controller.VotingResolved -= OnVotingResolved;
             _controller.ConnectedCountChanged -= OnConnectedCountChanged;
+            _controller.PlayerLeft -= OnPlayerLeft;
             _controller.StateChanged -= Render;
             _controller.DetectiveResultReceived -= OnDetectiveResult;
             _controller.IntentRejected -= OnIntentFeedback;
@@ -122,6 +125,16 @@ namespace MafiaGame.Presentation.Match
         private void OnReady() => Render();
 
         private void OnConnectedCountChanged(int count) => Render();
+
+        /// <summary>
+        /// A seat gave up after being absent too long. No role is shown: dropping out must not
+        /// reveal what somebody was.
+        /// </summary>
+        private void OnPlayerLeft(int seat)
+        {
+            _resultText.text = $"Mesto {seat + 1} je napustilo partiju (nije se vratilo na vreme).";
+            Render();
+        }
 
         /// <summary>
         /// The middle line: this player's private role once it is known, otherwise how many peers are
@@ -168,7 +181,21 @@ namespace MafiaGame.Presentation.Match
             Render();
         }
 
-        private void OnPhaseChanged(MatchPhase phase) => Render();
+        private void OnPhaseChanged(MatchPhase phase)
+        {
+            // The host sent everyone back to the lobby: forget the finished match. Without this the
+            // old role line would still be on screen, and a stale role would build night controls the
+            // next match has not dealt yet.
+            if (phase == MatchPhase.Lobby)
+            {
+                _hasRole = false;
+                _localRole = Role.Citizen;
+                _roleLine = string.Empty;
+                _resultText.text = string.Empty;
+            }
+
+            Render();
+        }
 
         /// <summary>
         /// Renders everything from the current replicated state. Called on every state change rather
@@ -508,6 +535,7 @@ namespace MafiaGame.Presentation.Match
             _discussButton.gameObject.SetActive(host && phase == MatchPhase.DayAnnouncement);
             _beginVoteButton.gameObject.SetActive(host && phase == MatchPhase.DayDiscussion);
             _resolveVoteButton.gameObject.SetActive(host && phase == MatchPhase.Voting);
+            _returnToLobbyButton.gameObject.SetActive(host && phase == MatchPhase.GameOver);
         }
 
         /// <summary>
@@ -669,6 +697,8 @@ namespace MafiaGame.Presentation.Match
             _beginVoteButton.onClick.AddListener(() => _controller?.HostBeginVoting());
             _resolveVoteButton = UiFactory.CreateButton(hostRow, "Prebroj glasove");
             _resolveVoteButton.onClick.AddListener(() => _controller?.HostResolveVoting());
+            _returnToLobbyButton = UiFactory.CreateButton(hostRow, "Nazad u lobi");
+            _returnToLobbyButton.onClick.AddListener(() => _controller?.HostReturnToLobby());
 
             _nightRow = UiFactory.CreateScrollColumn(canvas.transform, "NightRow",
                 new Vector2(0.55f, 0.04f), new Vector2(0.95f, 0.42f));

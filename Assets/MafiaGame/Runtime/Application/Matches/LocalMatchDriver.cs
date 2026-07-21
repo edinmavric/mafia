@@ -180,6 +180,34 @@ namespace MafiaGame.Application.Matches
             return resolution;
         }
 
+        /// <summary>
+        /// Removes a player who is gone for good. Deliberately does NOT end the match on the spot:
+        /// the phase machine only allows a win to be declared from a resolution phase, and — more
+        /// importantly — announcing "town wins" the moment the last Mafia's connection drops would
+        /// tell everyone what that player's role was. The win condition is evaluated at the next
+        /// natural resolution instead, at most one phase later.
+        /// Returns false when there is nobody to remove.
+        /// </summary>
+        public bool ForfeitPlayer(PlayerId id)
+        {
+            Match match = RequireMatch();
+            if (CurrentPhase == MatchPhase.Lobby || CurrentPhase == MatchPhase.GameOver)
+            {
+                return false;
+            }
+
+            foreach (PlayerState player in match.Players)
+            {
+                if (player.Id == id && player.IsAlive)
+                {
+                    match.Eliminate(id);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private void EvaluateAndBranch(MatchPhase continuePhase)
         {
             Outcome = _win.Evaluate(_match);

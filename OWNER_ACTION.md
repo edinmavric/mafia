@@ -310,7 +310,7 @@ pre nego što se razreši.
 3. **„Ne mogu da počnem"** — posledica istog problema; sada se podešavanje uskladi i pre
    samog starta, pa partija kreće.
 
-### [ ] 1. Test sa 4 igrača
+### [x] 1. Test sa 4 igrača
 
 1. **Window → Multiplayer → Multiplayer Play Mode**, štikliraj **Player 2**, **3**, **4**, pa **Play** (▶).
 2. U **Player 1**: **Napravi igru (Host)**, u ostalima ukucaj kod i **Pridruži se kodom**.
@@ -338,7 +338,7 @@ prozor nema Editor u sebi, pa je znatno lakši za laptop od MPPM virtuelnog igra
 
 Napravio sam ti dugme u meniju da ne moraš svaki put da biraš folder.
 
-### [ ] 1. Build jednim klikom (uvek u isti folder)
+### [x] 1. Build jednim klikom (uvek u isti folder)
 
 1. U Unity-ju gore u meniju klikni **MafiaGame → Build dev player (Linux)**.
 2. Sačekaj (prvi put ume da traje par minuta). Dole u **Console** panelu se pojavi
@@ -349,7 +349,7 @@ Napravio sam ti dugme u meniju da ne moraš svaki put da biraš folder.
 - Build je **van** projekta, pa ne može slučajno da uđe u git.
 - Posle svake promene koda samo ponovo klikni isto dugme.
 
-### [ ] 2. Pokreni onoliko igrača koliko ti treba
+### [x] 2. Pokreni onoliko igrača koliko ti treba
 
 U meniju **MafiaGame** imaš:
 
@@ -378,7 +378,7 @@ for i in 1 2 3 4 5 6 7; do ./Mafia.x86_64 -screen-width 640 -screen-height 480 -
 
 Da zatvoriš sve odjednom: `pkill -f Mafia.x86_64`
 
-### [ ] 3. Odigraj partiju sa 7 igrača (Doktor + Detektiv)
+### [x] 3. Odigraj partiju sa 7 igrača (Doktor + Detektiv)
 
 1. Pokreni **MafiaGame → Launch 7 players**.
 2. U **jednom** prozoru klikni **Napravi igru (Host)** → zapamti kod.
@@ -402,3 +402,76 @@ Napomena: build namerno uzima **samo `Lobby` scenu**. Ranije je build pokretao
 u listi scena u Build Settings — sada to više ne može da se desi.
 
 Ako se pojavi crvena greška u **Console** panelu ili prozor pukne, javi mi šta piše.
+
+## Milestone 4 (prekid veze i ponovno priključivanje)
+
+Nema ničega da se klikće u Editoru — sve je u kodu. Ovo je samo test.
+
+### [x] 1. Test: igrač se vrati na vreme — ZA SADA NE RADI (odloženo)
+
+Povratak u partiju posle gašenja prozora **trenutno ne uspeva** (Relay/Sessions odbija
+ponovno povezivanje). Ovo je svesno odloženo za kraj — vidi TODO u `docs/game-rules.md`.
+
+Ono što **radi** i što je važno za igru: partija se nikada ne zaledi zbog igrača koji je
+otišao — niko ga ne čeka, a posle 30 sekundi ispada iz partije (test 2 ispod).
+
+### [x] 2. Test: igrač se NE vrati
+
+1. Isto kao gore, ali zatvoreni prozor **ne vraćaj**.
+2. Broji do 30.
+   - Očekivano: u ostalim prozorima se pojavi poruka
+     **„Mesto N je napustilo partiju (nije se vratilo na vreme)."**
+   - Očekivano: piše **samo broj mesta**, nikada uloga. Ispadanje ne sme da oda ko je šta bio.
+   - Očekivano: taj igrač više ne može da se glasa za njega, niti on glasa.
+3. Ako je taj igrač bio **Mafija**: partija se **ne završava odmah** — završiće se na
+   sledećem razrešenju (kraj noći ili kraj glasanja) sa pobedom grada.
+   - Ovo je namerno: da se objavi „grad je pobedio" u trenutku kad neko ispadne,
+     to bi svima reklo da je taj igrač bio Mafija.
+
+Ako se pojavi crvena greška u **Console** panelu, javi mi šta piše.
+
+## Milestone 4 (Game scena) — partija se seli u svoju scenu
+
+Ovde **ima** posla u Editoru, ali je jedan klik. Idi redom.
+
+### [x] 1. Napravi Game scenu
+
+1. Otvori Unity i sačekaj da završi kompajliranje (donji desni ugao, kružić prestane).
+2. U gornjem meniju klikni **MafiaGame** → **Create Game scene**.
+   - Očekivano: u **Console** panelu se pojavi zelena/bela poruka
+     `[GameSceneBuilder] Created Assets/MafiaGame/Content/Scenes/Game.unity and added it to Build Settings.`
+3. Provera u **Project** panelu: otvori folder
+   `Assets` → `MafiaGame` → `Content` → `Scenes`.
+   - Očekivano: pored `Lobby` i `LocalPrototype` sada stoji i **`Game`**.
+4. Provera u Build Settings: meni **File** → **Build Profiles** (ili **Build Settings**).
+   - Očekivano: u listi scena postoji red
+     `Assets/MafiaGame/Content/Scenes/Game.unity` i **kvadratić levo od njega je čekiran**.
+   - Zatvori taj prozor (X gore desno).
+
+Ako Console pokaže crvenu grešku, javi mi tekst i stani ovde.
+
+### [x] 2. Napravi novi build
+
+1. Meni **MafiaGame** → **Build dev player (Linux)**.
+2. Sačekaj (traje minut-dva). Očekivano u Console: `[DevBuild] Build ready: ...`
+   - Ako umesto toga vidiš žuto upozorenje `Game scene not found`, znači da korak 1
+     nije uspeo — vrati se na njega.
+
+### [x] 3. Test: partija menja scenu
+
+1. Meni **MafiaGame** → **Launch 5 players**.
+2. U jednom prozoru **Napravi igru**, ostala četiri se pridruže kodom.
+3. Klikni **Počni partiju**.
+   - Očekivano: pozadina se promeni — pojavi se **sivi pod, smeđi okrugli sto i
+     10 svetlih blokova u krug** oko njega. To je privremeno okruženje (pravo 3D
+     okruženje dolazi u Milestone 6).
+   - Očekivano: UI partije (faza, uloga, dugmad) radi potpuno isto kao pre.
+4. Odigraj partiju do kraja (do poruke **„Faza: Kraj partije"**).
+5. Kod **hosta** se sada vidi dugme **„Nazad u lobi"**. Klikni ga.
+   - Očekivano: kod **svih** igrača nestane 3D okruženje i svi se vrate na lobi ekran.
+   - Očekivano: kod je **isti**, niko se ne mora ponovo pridruživati.
+   - Očekivano: kod hosta se opet vide **„Podešavanja partije"** i **„Počni partiju"**.
+6. Klikni **Počni partiju** ponovo.
+   - Očekivano: nova partija počinje normalno, uloge se **ponovo dele** (mogu biti druge).
+
+Ako nešto od ovoga ne odgovara, javi mi šta si video i šta piše u prozoru.

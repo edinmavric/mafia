@@ -4,7 +4,9 @@ using MafiaGame.Application.Matches;
 using MafiaGame.Domain.Matches;
 using MafiaGame.Domain.Roles;
 using MafiaGame.Domain.Voting;
+using MafiaGame.Infrastructure.Services;
 using Unity.Netcode;
+using UnityEngine.SceneManagement;
 
 namespace MafiaGame.Infrastructure.Networking
 {
@@ -23,10 +25,34 @@ namespace MafiaGame.Infrastructure.Networking
     /// </summary>
     public sealed class NetworkMatchController : NetworkBehaviour
     {
-        // Server-only state.
-        private readonly NetworkedMatchAuthority _authority = new NetworkedMatchAuthority();
+        /// <summary>
+        /// The match scene, loaded additively over the lobby scene while a match runs. Additive
+        /// rather than a full scene switch: the lobby scene is the network root (it holds the
+        /// NetworkManager and this scene-placed object), and replacing it would mean tearing down and
+        /// re-creating the authority mid-session. Netcode loads and unloads it on every peer at once.
+        /// </summary>
+        public const string GameSceneName = "Game";
+
+        // Server-only state. Not readonly: returning to the lobby replaces the authority with a fresh
+        // one, which is the only way to be sure no scrap of the finished match survives into the next.
+        private NetworkedMatchAuthority _authority = new NetworkedMatchAuthority();
         private readonly Dictionary<ulong, int> _seatByClient = new Dictionary<ulong, int>();
         private readonly Dictionary<int, ulong> _clientBySeat = new Dictionary<int, ulong>();
+
+        // How a returning player is recognised across a full application restart. A reconnecting
+        // client arrives with a brand-new connection id, so the seat cannot be read from the
+        // connection. Instead each seat is tied to the player's Unity Authentication id, which is
+        // stable per profile and survives the process dying. The client sends its own id on connect
+        // (it already knows it from sign-in); the server never invents it.
+        //
+        // Security note (owner decision 2026-07-20): the id is a client-supplied claim, and it is
+        // public in the lobby roster, so this is not spoof-proof — a lobby member could in theory
+        // claim a *disconnected* member's id to take their seat and role. That is acceptable for the
+        // private-friends MVP and is contained two ways: a seat is only handed over while it is
+        // actually flagged disconnected, and never to a connection that already holds a seat.
+        // Hardening (a server-issued secret, or a trusted transport-level identity) is deferred.
+        private readonly Dictionary<string, int> _seatByPlayerId = new Dictionary<string, int>();
+        private readonly Dictionary<ulong, string> _playerIdByClient = new Dictionary<ulong, string>();
 
         // Public, replicated state.
         private readonly NetworkVariable<MatchPhase> _phase = new NetworkVariable<MatchPhase>(
@@ -234,6 +260,10 @@ namespace MafiaGame.Infrastructure.Networking
         public event Action<DetectivePrivateResult> DetectiveResultReceived;
         public event Action<int> ConnectedCountChanged;
 
+        /// <summary>A seat was removed after being absent too long. Carries the seat only.</summary>
+        public event Action<int> PlayerLeft;
+
+
         /// <summary>Raised whenever any replicated public state changes; the view re-renders on it.</summary>
         public event Action StateChanged;
 
@@ -258,7 +288,19 @@ namespace MafiaGame.Infrastructure.Networking
             {
                 NetworkManager.OnClientDisconnectCallback += OnClientDisconnect;
                 NetworkManager.OnClientConnectedCallback += OnClientConnected;
+
+                // Record the host's own identity directly; the host never sends itself an RPC.
+                _playerIdByClient[NetworkManager.LocalClientId] = GameServices.LocalPlayerId;
                 PublishConnectedCount();
+            }
+
+            // Every client tells the server who it is as soon as it spawns. Before a match this just
+            // registers the identity so the host can tie it to a seat when roles are dealt; during a
+            // match it doubles as the rejoin claim — a returning client (even after a full restart)
+            // is recognised by the same id and gets its seat and role back, with no button to find.
+            if (!IsServer)
+            {
+                IdentifyServerRpc(GameServices.LocalPlayerId);
             }
 
             Ready?.Invoke();
@@ -293,7 +335,21 @@ namespace MafiaGame.Infrastructure.Networking
                 return;
             }
 
-            switch (_authority.Tick(UnityEngine.Time.deltaTime))
+            float delta = UnityEngine.Time.deltaTime;
+
+            // Absent players first: a seat that gives up changes who the phase is still waiting for,
+            // so the phase clock should see the new picture in the same frame.
+            IReadOnlyList<int> forfeited = _authority.TickAbsence(delta);
+            if (forfeited.Count > 0)
+            {
+                PublishAliveAndOutcome();
+                foreach (int seat in forfeited)
+                {
+                    PlayerLeftClientRpc(seat);
+                }
+            }
+
+            switch (_authority.Tick(delta))
             {
                 case PhaseAdvance.ConfirmRolesSeen: HostConfirmRolesSeen(); break;
                 case PhaseAdvance.ResolveNight: HostResolveNight(); break;
@@ -358,10 +414,21 @@ namespace MafiaGame.Infrastructure.Networking
 
             _seatByClient.Clear();
             _clientBySeat.Clear();
+            _seatByPlayerId.Clear();
             for (int seat = 0; seat < count; seat++)
             {
-                _seatByClient[clients[seat]] = seat;
-                _clientBySeat[seat] = clients[seat];
+                ulong client = clients[seat];
+                _seatByClient[client] = seat;
+                _clientBySeat[seat] = client;
+
+                // Tie the seat to the player's stable account id so a returning client can be
+                // recognised after a restart. A client that has not identified yet is simply not
+                // rejoinable — an empty id is never stored.
+                if (_playerIdByClient.TryGetValue(client, out string playerId) &&
+                    !string.IsNullOrEmpty(playerId))
+                {
+                    _seatByPlayerId[playerId] = seat;
+                }
             }
 
             int seed = Guid.NewGuid().GetHashCode();
@@ -379,6 +446,87 @@ namespace MafiaGame.Infrastructure.Networking
             PublishAliveAndOutcome();
             _matchRunning = true;
             PublishPhase(); // RoleReveal
+
+            // The players are now in a match, so move them out of the lobby scene. Loading after the
+            // roles are dealt is deliberate: the role-reveal phase covers the load, and no client can
+            // miss anything because RPCs arrive regardless of which scenes that client has loaded.
+            LoadGameScene();
+        }
+
+        /// <summary>
+        /// Ends the finished match and puts everyone back in the lobby with the same join code, ready
+        /// to play again. Host only, and only once the match is actually over — a mid-match reset
+        /// would silently discard a game the others are still playing.
+        /// </summary>
+        public void HostReturnToLobby()
+        {
+            if (!IsServer || _authority.CurrentPhase != MatchPhase.GameOver)
+            {
+                return;
+            }
+
+            UnloadGameScene();
+
+            // A brand-new authority rather than a reset method: there is then no chance of a leftover
+            // vote, night action or absence timer from the finished match leaking into the next one.
+            _authority = new NetworkedMatchAuthority();
+            _seatByClient.Clear();
+            _clientBySeat.Clear();
+            _seatByPlayerId.Clear();
+            _matchRunning = false;
+
+            _playerCount.Value = 0;
+            _aliveMask.Value = 0;
+            _voteCandidateMask.Value = 0;
+            _votesCast.Value = 0;
+            _outcome.Value = GameOutcome.None;
+            _phaseEndsAt.Value = NoDeadline;
+            _phase.Value = MatchPhase.Lobby;
+
+            // The lobby may have changed size during the match, so trim the setup before it is shown.
+            ApplySetup(_hostSetup, explainClamp: false);
+            StateChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// Asks Netcode to add the match scene on every peer. A failure is reported to the host and
+        /// nothing else: the match itself is driven by the authority, not by the scene, so playing on
+        /// against the lobby background is far better than refusing to start.
+        /// </summary>
+        private void LoadGameScene()
+        {
+            if (!IsServer || NetworkManager == null || NetworkManager.SceneManager == null)
+            {
+                return;
+            }
+
+            if (SceneManager.GetSceneByName(GameSceneName).isLoaded)
+            {
+                return;
+            }
+
+            SceneEventProgressStatus status =
+                NetworkManager.SceneManager.LoadScene(GameSceneName, LoadSceneMode.Additive);
+            if (status != SceneEventProgressStatus.Started)
+            {
+                HostNotice?.Invoke(
+                    $"Scena partije nije mogla da se učita ({status}). Partija radi normalno, " +
+                    "samo bez 3D scene. Proveri da li je scena „Game\" u Build Settings.");
+            }
+        }
+
+        private void UnloadGameScene()
+        {
+            if (!IsServer || NetworkManager == null || NetworkManager.SceneManager == null)
+            {
+                return;
+            }
+
+            Scene scene = SceneManager.GetSceneByName(GameSceneName);
+            if (scene.IsValid() && scene.isLoaded)
+            {
+                NetworkManager.SceneManager.UnloadScene(scene);
+            }
         }
 
         /// <summary>Advances from role reveal into the night.</summary>
@@ -491,6 +639,53 @@ namespace MafiaGame.Infrastructure.Networking
         public void SubmitVoteServerRpc(int targetSeat, ServerRpcParams rpcParams = default) =>
             HandleIntent(rpcParams.Receive.SenderClientId, targetSeat, _authority.SubmitVote);
 
+        /// <summary>
+        /// A client announces its stable account id. Before a match this only registers the identity
+        /// so the seat can be tied to it when roles are dealt. During a match it is also the rejoin
+        /// claim: if that id owns a seat that is currently disconnected, the seat is handed back to
+        /// this connection and the role is re-sent — privately, to this client alone.
+        ///
+        /// The seat is only restored while it is actually flagged disconnected and never to a
+        /// connection that already holds one, so a live player's seat cannot be stolen out from under
+        /// them (see the security note on <see cref="_seatByPlayerId"/>).
+        /// </summary>
+        [ServerRpc(RequireOwnership = false)]
+        public void IdentifyServerRpc(string playerId, ServerRpcParams rpcParams = default)
+        {
+            if (!IsServer || string.IsNullOrEmpty(playerId))
+            {
+                return;
+            }
+
+            ulong client = rpcParams.Receive.SenderClientId;
+            _playerIdByClient[client] = playerId;
+
+            if (!_matchRunning ||
+                _seatByClient.ContainsKey(client) ||
+                !_seatByPlayerId.TryGetValue(playerId, out int seat) ||
+                !_authority.IsDisconnected(seat))
+            {
+                return;
+            }
+
+            // The seat may still be mapped to the dead connection; drop that first so one seat is
+            // never reachable from two connection ids.
+            if (_clientBySeat.TryGetValue(seat, out ulong previous) && previous != client)
+            {
+                _seatByClient.Remove(previous);
+            }
+
+            _seatByClient[client] = seat;
+            _clientBySeat[seat] = client;
+            _authority.MarkReconnected(seat);
+
+            PrivateRoleInfo role = _authority.RoleInfoFor(seat);
+            ReceiveRoleClientRpc(seat, (int)role.Role, ToArray(role.MafiaTeammateSeats), Target(client));
+
+            PublishConnectedCount();
+            StateChanged?.Invoke();
+        }
+
         private void HandleIntent(ulong senderClientId, int targetSeat, Func<int, int, IntentResult> submit)
         {
             if (!IsServer || !_seatByClient.TryGetValue(senderClientId, out int senderSeat))
@@ -551,11 +746,19 @@ namespace MafiaGame.Infrastructure.Networking
         // ----- Targeted / broadcast client RPCs -----
 
         [ClientRpc]
-        private void ReceiveRoleClientRpc(int seat, int role, int[] teammateSeats, ClientRpcParams rpcParams = default)
+        private void ReceiveRoleClientRpc(
+            int seat, int role, int[] teammateSeats, ClientRpcParams rpcParams = default)
         {
             LocalSeat = seat;
             RoleReceived?.Invoke(new PrivateRoleInfo(seat, (Role)role, teammateSeats ?? Array.Empty<int>()));
         }
+
+        /// <summary>
+        /// Announces that a seat gave up after being absent too long. Only the seat is public — no
+        /// role is attached, so a player leaving never reveals what they were.
+        /// </summary>
+        [ClientRpc]
+        private void PlayerLeftClientRpc(int seat) => PlayerLeft?.Invoke(seat);
 
         [ClientRpc]
         private void NightResultClientRpc(int killedSeat, bool hasReveal, int revealRole)
@@ -587,7 +790,17 @@ namespace MafiaGame.Infrastructure.Networking
         private void IntentAcceptedClientRpc(ClientRpcParams rpcParams = default) =>
             IntentRejected?.Invoke(IntentRejection.None);
 
-        private void HandlePhaseChanged(MatchPhase previous, MatchPhase current) => PhaseChanged?.Invoke(current);
+        private void HandlePhaseChanged(MatchPhase previous, MatchPhase current)
+        {
+            // Back in the lobby means this client no longer holds a seat. Clearing it here, on the
+            // one authoritative signal, keeps a stale seat from the finished match out of the next.
+            if (current == MatchPhase.Lobby)
+            {
+                LocalSeat = -1;
+            }
+
+            PhaseChanged?.Invoke(current);
+        }
 
         private void HandleConnectedCountChanged(int previous, int current) => ConnectedCountChanged?.Invoke(current);
 
