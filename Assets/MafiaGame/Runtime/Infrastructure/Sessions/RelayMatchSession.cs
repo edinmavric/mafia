@@ -49,7 +49,14 @@ namespace MafiaGame.Infrastructure.Sessions
         public async Task<string> HostAsync(int maxPlayers)
         {
             TransportTuning.ApplyFastFailure();
-            var options = new SessionOptions { MaxPlayers = maxPlayers, IsPrivate = true }.WithRelayNetwork();
+
+            // Host migration keeps the lobby alive when whoever created it leaves: the Sessions SDK
+            // picks another member, moves the Relay allocation, and everyone else stays connected on
+            // the same code instead of being dropped. See LobbyMigrationDataHandler for why the
+            // handover carries no data, and docs/game-rules.md for what it does not cover.
+            var options = new SessionOptions { MaxPlayers = maxPlayers, IsPrivate = true }
+                .WithRelayNetwork()
+                .WithHostMigration(new LobbyMigrationDataHandler());
             IHostSession session = await MultiplayerService.Instance.CreateSessionAsync(options);
             Bind(session);
             return session.Code;
@@ -70,7 +77,13 @@ namespace MafiaGame.Infrastructure.Sessions
             // joining the game they typed the code for.
             try
             {
-                ISession session = await MultiplayerService.Instance.JoinSessionByCodeAsync(code.Trim());
+                // Host migration has to be asked for on *every* peer, not just the one that created
+                // the session: the handler is what tells a member it may take over. Without it here,
+                // each client logged "Host migration is disabled" when the host left, the lobby was
+                // handed to somebody else, and the network never followed.
+                var options = new JoinSessionOptions().WithHostMigration(new LobbyMigrationDataHandler());
+                ISession session =
+                    await MultiplayerService.Instance.JoinSessionByCodeAsync(code.Trim(), options);
                 Bind(session);
             }
             catch (Exception exception) when (IsAlreadyMember(exception))

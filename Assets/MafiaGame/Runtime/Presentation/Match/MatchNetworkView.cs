@@ -298,7 +298,10 @@ namespace MafiaGame.Presentation.Match
         /// </summary>
         private void RefreshHostControls()
         {
-            bool host = _controller != null && _controller.IsHostPeer;
+            // IsSpawned matters as much as IsHostPeer: once the host leaves the session the object is
+            // despawned but still sitting in the scene, and without this check their own controls
+            // stayed on screen over the join form they had just been returned to.
+            bool host = _controller != null && _controller.IsSpawned && _controller.IsHostPeer;
             MatchPhase phase = _controller != null ? _controller.CurrentPhase : MatchPhase.Lobby;
 
             bool canConfigure = host && phase == MatchPhase.Lobby;

@@ -38,6 +38,9 @@ namespace MafiaGame.Presentation.Match
         private Button _returnToLobbyButton;
         private Transform _actionRow;
 
+        /// <summary>The whole screen, hidden when there is no match to show.</summary>
+        private GameObject _screenRoot;
+
         private Role _localRole = Role.Citizen;
         private bool _hasRole;
 
@@ -166,6 +169,18 @@ namespace MafiaGame.Presentation.Match
                 return;
             }
 
+            // Normally this scene is unloaded the moment the match ends, so the screen simply goes
+            // away with it. It can outlive its match once, though: if the host leaves mid-match the
+            // session hands the role to somebody else, and the new host comes up with no match
+            // running and no way to unload a scene it never loaded. Hiding on the lobby phase keeps
+            // nobody stranded on a dead match screen with the real lobby underneath it.
+            bool hasMatch = _controller.IsSpawned && _controller.CurrentPhase != MatchPhase.Lobby;
+            _screenRoot.SetActive(hasMatch);
+            if (!hasMatch)
+            {
+                return;
+            }
+
             _phaseText.text = PhaseHeader();
             _roleText.text = _hasRole
                 ? _roleLine
@@ -182,6 +197,11 @@ namespace MafiaGame.Presentation.Match
         private void Update()
         {
             if (_controller == null)
+            {
+                return;
+            }
+
+            if (!_screenRoot.activeSelf)
             {
                 return;
             }
@@ -427,6 +447,7 @@ namespace MafiaGame.Presentation.Match
             Canvas canvas = UiFactory.CreateCanvas("MatchCanvas");
             canvas.transform.SetParent(transform, false);
             canvas.sortingOrder = 20; // above the lobby canvas underneath
+            _screenRoot = canvas.gameObject;
 
             // Dim the 3D scene behind the UI: white text over the bright skybox was unreadable.
             // Not a raycast target, so it never intercepts a click meant for a button.

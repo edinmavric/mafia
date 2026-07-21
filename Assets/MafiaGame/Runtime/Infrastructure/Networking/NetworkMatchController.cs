@@ -330,6 +330,11 @@ namespace MafiaGame.Infrastructure.Networking
                 NetworkManager.OnClientDisconnectCallback -= OnClientDisconnect;
                 NetworkManager.OnClientConnectedCallback -= OnClientConnected;
             }
+
+            // Leaving the session is a state change like any other, and the screens have to hear
+            // about it: without this the host's own controls stayed on screen after they left,
+            // because nothing else ever fires once the network is gone.
+            StateChanged?.Invoke();
         }
 
         /// <summary>

@@ -198,5 +198,24 @@ The following are intentionally deferred and recorded here so they are not lost:
 
 ## Still open (not needed until later milestones)
 - Whether dead players can speak / spectate (voice & presentation).
-- Host migration, lobby code format (networking).
+- **Host migration.** **Status: lobby only** (owner decision 2026-07-21). The session is created
+  `WithHostMigration`, so when whoever created the lobby leaves, the Sessions SDK picks another
+  member, moves the Relay allocation, and everybody else stays connected on the same join code
+  instead of being dropped. The handover carries **no data** (`LobbyMigrationDataHandler`): in the
+  lobby there is nothing to carry, and it is the safe default — a running match's state contains
+  **every player's role**, and shipping that through the Lobby service to whichever player happens
+  to be picked next is a decision of its own.
+  Two things this cost to get working, both worth remembering. The option has to be asked for on
+  **every peer**, not only the one that creates the session: it is the handler that tells a member it
+  may take over, so `JoinSessionOptions` needs it as much as `SessionOptions` — without it every
+  client logged "Host migration is disabled", the lobby was handed over and the network never
+  followed. And `Generate()` must return **at least one byte**: the Lobby service rejects a
+  zero-length upload, and the exception stopped the SDK from scheduling any further uploads.
+  Consequence, deliberately accepted: a **match does not survive** a host leaving. The new host
+  comes up with no match running and everyone lands back in the lobby; the host's chosen settings
+  reset to the defaults. The match screen hides itself on the lobby phase so nobody is stranded on a
+  dead match screen — it cannot unload its own scene there, because the new host never loaded it.
+  Carrying a running match through a handover is deferred, and needs the hidden-role question
+  answered first.
+- Lobby code format (networking).
 - Role-reveal and announcement durations in the lobby UI (currently fixed at the defaults).
