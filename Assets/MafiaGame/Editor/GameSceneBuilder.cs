@@ -48,7 +48,7 @@ namespace MafiaGame.EditorTools
                 return;
             }
 
-            AssignMaterial(material);
+            RepairScene(material);
             RegisterInBuildSettings();
             Debug.Log($"[GameSceneBuilder] {GameScenePath} is ready and registered in Build Settings.");
         }
@@ -60,8 +60,10 @@ namespace MafiaGame.EditorTools
 
             // Additive so the scene the owner is working in is not closed under them.
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
-            var root = new GameObject("MatchEnvironment", typeof(MatchEnvironment));
-            SceneManager.MoveGameObjectToScene(root, scene);
+            SceneManager.MoveGameObjectToScene(
+                new GameObject("MatchEnvironment", typeof(MatchEnvironment)), scene);
+            SceneManager.MoveGameObjectToScene(
+                new GameObject("MatchScreen", typeof(MatchScreenView)), scene);
 
             if (!EditorSceneManager.SaveScene(scene, GameScenePath))
             {
@@ -75,28 +77,21 @@ namespace MafiaGame.EditorTools
         }
 
         /// <summary>
-        /// Points the scene's environment object at the placeholder material. Done every run so a
-        /// scene created before the material existed is repaired rather than having to be deleted.
+        /// Fills in whatever an existing scene is missing: the placeholder material on the
+        /// environment, and the match screen itself. Run every time so a scene created by an earlier
+        /// version is brought up to date instead of having to be deleted and rebuilt by hand.
+        /// Anything the owner has added is left alone.
         /// </summary>
-        private static void AssignMaterial(Material material)
+        private static void RepairScene(Material material)
         {
             Scene scene = EditorSceneManager.OpenScene(GameScenePath, OpenSceneMode.Additive);
-            MatchEnvironment environment = null;
-            foreach (GameObject root in scene.GetRootGameObjects())
-            {
-                environment = root.GetComponentInChildren<MatchEnvironment>(includeInactive: true);
-                if (environment != null)
-                {
-                    break;
-                }
-            }
+            bool changed = false;
 
+            MatchEnvironment environment = Find<MatchEnvironment>(scene);
             if (environment == null)
             {
-                Debug.LogWarning(
-                    $"[GameSceneBuilder] No MatchEnvironment in {GameScenePath}; nothing to assign.");
-                EditorSceneManager.CloseScene(scene, removeScene: true);
-                return;
+                environment = NewObject<MatchEnvironment>(scene, "MatchEnvironment");
+                changed = true;
             }
 
             var serialized = new SerializedObject(environment);
@@ -105,11 +100,43 @@ namespace MafiaGame.EditorTools
             {
                 property.objectReferenceValue = material;
                 serialized.ApplyModifiedPropertiesWithoutUndo();
+                changed = true;
+            }
+
+            if (Find<MatchScreenView>(scene) == null)
+            {
+                NewObject<MatchScreenView>(scene, "MatchScreen");
+                changed = true;
+            }
+
+            if (changed)
+            {
                 EditorSceneManager.MarkSceneDirty(scene);
                 EditorSceneManager.SaveScene(scene);
             }
 
             EditorSceneManager.CloseScene(scene, removeScene: true);
+        }
+
+        private static T Find<T>(Scene scene) where T : Component
+        {
+            foreach (GameObject root in scene.GetRootGameObjects())
+            {
+                var found = root.GetComponentInChildren<T>(includeInactive: true);
+                if (found != null)
+                {
+                    return found;
+                }
+            }
+
+            return null;
+        }
+
+        private static T NewObject<T>(Scene scene, string name) where T : Component
+        {
+            var go = new GameObject(name, typeof(T));
+            SceneManager.MoveGameObjectToScene(go, scene);
+            return go.GetComponent<T>();
         }
 
         private static Material EnsureMaterial()

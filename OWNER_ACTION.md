@@ -475,3 +475,31 @@ Ako Console pokaže crvenu grešku, javi mi tekst i stani ovde.
    - Očekivano: nova partija počinje normalno, uloge se **ponovo dele** (mogu biti druge).
 
 Ako nešto od ovoga ne odgovara, javi mi šta si video i šta piše u prozoru.
+
+## Milestone 4 (čišćenje) — ekran partije se seli u Game scenu
+
+Spolja se ništa ne menja. Ekran koji si do sada gledao je bio jedan veliki fajl koji je
+držao i lobi i partiju; sada je podeljen na dva, po sceni u kojoj se prikazuje.
+
+### [ ] 1. Dopuni Game scenu
+
+1. Otvori Unity i sačekaj da završi kompajliranje.
+2. Meni **MafiaGame** → **Create Game scene**.
+   - Ovo NE pravi scenu iznova — samo dopuni ono što fali. Sada dodaje objekat
+     **MatchScreen** (ekran partije).
+   - Očekivano u Console: `[GameSceneBuilder] ... is ready and registered in Build Settings.`
+3. Provera: u **Project** panelu dupli klik na `Assets/MafiaGame/Content/Scenes/Game`.
+   - Očekivano: u **Hierarchy** panelu vidiš **MatchEnvironment** i **MatchScreen**.
+   - Vrati se na `Lobby` scenu (dupli klik na `Lobby`) da ne bi slučajno radio u Game sceni.
+
+### [ ] 2. Build i test
+
+1. Meni **MafiaGame** → **Build dev player (Linux)**.
+2. **MafiaGame** → **Launch 5 players**, napravi igru, ostali se pridruže.
+   - Očekivano u lobiju: i dalje vidiš **Podešavanja partije** i **Počni partiju** (host),
+     i red „Mrežno povezano: N igrača…".
+3. Klikni **Počni partiju** i odigraj partiju do kraja.
+   - Očekivano: faza, uloga, rezultat i dugmad rade **potpuno isto** kao pre.
+   - Očekivano: uloga se vidi ODMAH kad partija počne (ne prazan red).
+4. Host klikne **Nazad u lobi**.
+   - Očekivano: svi se vrate na lobi ekran, kod isti, može nova partija.

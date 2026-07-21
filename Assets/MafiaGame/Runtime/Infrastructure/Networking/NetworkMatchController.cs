@@ -109,6 +109,15 @@ namespace MafiaGame.Infrastructure.Networking
         /// <summary>This client's seat, or -1 until roles are dealt. Local (client-side) value.</summary>
         public int LocalSeat { get; private set; } = -1;
 
+        /// <summary>
+        /// This client's own private role, once it has been dealt one. Remembered rather than only
+        /// raised as an event because the match screen is created after the match starts — the scene
+        /// it lives in is still loading when the role arrives — and it has to be able to ask for what
+        /// it missed. Null until dealt. Local to this client: it is never replicated and never holds
+        /// anyone else's role.
+        /// </summary>
+        public PrivateRoleInfo LocalRole { get; private set; }
+
         /// <summary>True on the host/server peer.</summary>
         public bool IsHostPeer => IsServer;
 
@@ -775,7 +784,8 @@ namespace MafiaGame.Infrastructure.Networking
             int seat, int role, int[] teammateSeats, ClientRpcParams rpcParams = default)
         {
             LocalSeat = seat;
-            RoleReceived?.Invoke(new PrivateRoleInfo(seat, (Role)role, teammateSeats ?? Array.Empty<int>()));
+            LocalRole = new PrivateRoleInfo(seat, (Role)role, teammateSeats ?? Array.Empty<int>());
+            RoleReceived?.Invoke(LocalRole);
         }
 
         /// <summary>
@@ -822,6 +832,7 @@ namespace MafiaGame.Infrastructure.Networking
             if (current == MatchPhase.Lobby)
             {
                 LocalSeat = -1;
+                LocalRole = null;
             }
 
             PhaseChanged?.Invoke(current);

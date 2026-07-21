@@ -71,7 +71,11 @@ namespace MafiaGame.Presentation.LocalPrototype
             return content.transform;
         }
 
-        private static void Anchor(RectTransform rt, Vector2 anchorMin, Vector2 anchorMax)
+        /// <summary>
+        /// Stretches a rect between two normalised screen corners, with no extra offset. Every screen
+        /// lays out this way, so it lives here rather than being copied into each view.
+        /// </summary>
+        public static void Anchor(RectTransform rt, Vector2 anchorMin, Vector2 anchorMax)
         {
             rt.anchorMin = anchorMin;
             rt.anchorMax = anchorMax;

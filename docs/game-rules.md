@@ -129,9 +129,17 @@ The following are intentionally deferred and recorded here so they are not lost:
   field by field, so no leftover vote, night action or absence timer can survive into the next match;
   every replicated value is reset with it, and each client drops its seat and role on the phase
   returning to `Lobby`.
-  Still deferred: the match UI itself still lives on the lobby scene's canvas (it is a screen-space
-  overlay, so it draws over either scene). Splitting `MatchNetworkView` into a lobby part and a match
-  part, and moving the match part into the `Game` scene, is a later cleanup.
+  The screens are split along the same line as the scenes (2026-07-21): `MatchNetworkView` stays in
+  the lobby scene and now owns only the host's lobby half — the agreed settings, the settings sheet
+  and the start button — while everything shown *during* a match belongs to `MatchScreenView` in the
+  `Game` scene. The match screen therefore exists exactly as long as a match does, instead of one
+  700-line view hiding half of itself on every render. Its class name is deliberately unchanged: the
+  lobby scene references that component, and renaming a MonoBehaviour breaks the reference.
+  The match screen cannot receive the controller through the Inspector (a serialized reference
+  cannot cross scenes), so it looks it up once at its own startup. For the same reason the controller
+  remembers this client's own role in `LocalRole`: the role is dealt before the match scene has
+  finished loading, so the screen has to be able to ask for what it missed rather than wait for an
+  event that has already fired. It is a local value — never replicated, and never anyone else's role.
 - **Seed source.** The host picks a non-predictable seed (`Guid.NewGuid().GetHashCode()`) so
   clients cannot control or predict role assignment. This is NOT cryptographic; if stronger
   guarantees are needed later, revisit. Clients never receive or influence the seed.
