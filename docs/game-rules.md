@@ -197,7 +197,12 @@ The following are intentionally deferred and recorded here so they are not lost:
   Still deferred: surviving an application restart.
 
 ## Still open (not needed until later milestones)
-- Whether dead players can speak / spectate (voice & presentation).
+- **Voice chat provider.** Deferred by owner decision 2026-07-21; the comparison and the reason
+  Vivox is ruled out (no Linux support, and development is on Ubuntu) are recorded in
+  `docs/adr/ADR-002-voice-chat.md`. Nothing is installed.
+- Whether dead players can speak / spectate, who hears whom at night, proximity versus global
+  voice, push-to-talk (voice & presentation). Not to be assumed by presentation work in the
+  meantime — a seat must be able to show a "talking" state later without being redesigned.
 - **Host migration.** **Status: lobby only** (owner decision 2026-07-21). The session is created
   `WithHostMigration`, so when whoever created the lobby leaves, the Sessions SDK picks another
   member, moves the Relay allocation, and everybody else stays connected on the same join code
