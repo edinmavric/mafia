@@ -16,6 +16,14 @@ namespace MafiaGame.Domain.Matches
         DayDiscussion,
         Voting,
         VotingResolution,
-        GameOver
+        GameOver,
+
+        /// <summary>
+        /// The tied players' last defense, between a tied vote and the revote. Deliberately appended
+        /// rather than inserted after <see cref="Voting"/> where it belongs in the flow: the numeric
+        /// values are already replicated and serialized, and shifting them would silently mean a
+        /// different phase to anything holding an older value.
+        /// </summary>
+        TieBreaker
     }
 }

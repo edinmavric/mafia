@@ -143,9 +143,17 @@ namespace MafiaGame.Application.Matches
             Transition(MatchPhase.Voting);
         }
 
+        /// <summary>Opens the revote once the tied players have had their defense.</summary>
+        public void BeginRevote()
+        {
+            Guard(MatchPhase.TieBreaker);
+            Transition(MatchPhase.Voting);
+        }
+
         /// <summary>
         /// Tallies a voting round. A first-round tie returns <see cref="VoteOutcome.TieRequiresRevote"/>
-        /// and stays in the voting phase so a revote (restricted to the tied candidates) can follow.
+        /// and moves to <see cref="MatchPhase.TieBreaker"/>, where the tied players defend themselves
+        /// before the revote (restricted to those candidates) opens.
         /// A terminal outcome applies any elimination and branches to night or game over.
         /// </summary>
         public VotingResolution ResolveVoting(
@@ -167,6 +175,7 @@ namespace MafiaGame.Application.Matches
             VotingResolution resolution = _voting.Resolve(votes, aliveIds, candidateRestriction);
             if (resolution.Outcome == VoteOutcome.TieRequiresRevote)
             {
+                Transition(MatchPhase.TieBreaker);
                 return resolution;
             }
 

@@ -25,7 +25,12 @@ namespace MafiaGame.Domain.Matches
                 { MatchPhase.NightResolution, new[] { MatchPhase.DayAnnouncement, MatchPhase.GameOver } },
                 { MatchPhase.DayAnnouncement, new[] { MatchPhase.DayDiscussion } },
                 { MatchPhase.DayDiscussion, new[] { MatchPhase.Voting } },
-                { MatchPhase.Voting, new[] { MatchPhase.VotingResolution } },
+                { MatchPhase.Voting, new[] { MatchPhase.VotingResolution, MatchPhase.TieBreaker } },
+
+                // A tie sends the day into the defense window and back into voting for the revote.
+                // The revote's own tie ends the day through VotingResolution instead, so the loop
+                // cannot repeat: only the first tie of a day reaches TieBreaker.
+                { MatchPhase.TieBreaker, new[] { MatchPhase.Voting } },
                 { MatchPhase.VotingResolution, new[] { MatchPhase.Night, MatchPhase.GameOver } },
                 { MatchPhase.GameOver, System.Array.Empty<MatchPhase>() },
             };

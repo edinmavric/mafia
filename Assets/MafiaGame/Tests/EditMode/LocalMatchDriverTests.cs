@@ -57,7 +57,7 @@ namespace MafiaGame.Tests.EditMode
         }
 
         [Test]
-        public void Voting_Tie_RequestsRevoteAndStaysInVotingPhase()
+        public void Voting_Tie_EntersTheTieBreakerDefenseBeforeTheRevote()
         {
             var driver = new LocalMatchDriver();
             driver.Start(MatchConfiguration.Create(4, 1, false, false, false).Configuration, Roster(4), 5);
@@ -70,7 +70,22 @@ namespace MafiaGame.Tests.EditMode
             VotingResolution resolution = driver.ResolveVoting(votes);
 
             Assert.AreEqual(VoteOutcome.TieRequiresRevote, resolution.Outcome);
+
+            // The tied players get their last word before anyone votes again.
+            Assert.AreEqual(MatchPhase.TieBreaker, driver.CurrentPhase);
+
+            driver.BeginRevote();
             Assert.AreEqual(MatchPhase.Voting, driver.CurrentPhase);
+        }
+
+        [Test]
+        public void BeginRevote_OutsideTheTieBreaker_IsRejected()
+        {
+            var driver = new LocalMatchDriver();
+            driver.Start(MatchConfiguration.Create(4, 1, false, false, false).Configuration, Roster(4), 5);
+            driver.ConfirmRolesSeen();
+
+            Assert.Throws<InvalidOperationException>(() => driver.BeginRevote());
         }
 
         [Test]
@@ -96,6 +111,7 @@ namespace MafiaGame.Tests.EditMode
                 VotingResolution resolution = driver.ResolveVoting(VotesAgainstFirstLiving(driver, null));
                 if (resolution.Outcome == VoteOutcome.TieRequiresRevote)
                 {
+                    driver.BeginRevote();
                     driver.ResolveVoting(
                         VotesAgainstFirstLiving(driver, resolution.TiedCandidates), resolution.TiedCandidates);
                 }

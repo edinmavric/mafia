@@ -168,6 +168,7 @@ namespace MafiaGame.Application.Matches
                 case MatchPhase.DayAnnouncement: return PhaseAdvance.ContinueToDiscussion;
                 case MatchPhase.DayDiscussion: return PhaseAdvance.BeginVoting;
                 case MatchPhase.Voting: return PhaseAdvance.ResolveVoting;
+                case MatchPhase.TieBreaker: return PhaseAdvance.BeginRevote;
                 default: return PhaseAdvance.None;
             }
         }
@@ -186,6 +187,7 @@ namespace MafiaGame.Application.Matches
                 case MatchPhase.DayAnnouncement: duration = _timings.AnnouncementSeconds; break;
                 case MatchPhase.DayDiscussion: duration = _timings.DiscussionSeconds; break;
                 case MatchPhase.Voting: duration = _timings.VotingSeconds; break;
+                case MatchPhase.TieBreaker: duration = MatchTimings.TieBreakerSeconds; break;
                 default: duration = 0d; break;
             }
 
@@ -442,6 +444,18 @@ namespace MafiaGame.Application.Matches
             ArmTimer();
         }
 
+        /// <summary>
+        /// Opens the revote after the tied players' defense. The candidates were already narrowed to
+        /// the tied seats when the tie was tallied, so this only restarts the round.
+        /// </summary>
+        public void BeginRevote()
+        {
+            RequireStarted();
+            _driver.BeginRevote();
+            _votesBySeat.Clear();
+            ArmTimer();
+        }
+
         /// <summary>How many seats have submitted a vote in the current round (public, safe to show).</summary>
         public int SubmittedVoteCount => _votesBySeat.Count;
 
@@ -482,8 +496,9 @@ namespace MafiaGame.Application.Matches
 
         /// <summary>
         /// Tallies the votes and returns the public result. Votes from seats that disconnected are
-        /// dropped (confirmed rule). A first-round tie keeps the match in the voting phase and arms a
-        /// revote restricted to the tied seats; a tie in the revote ends the day with no elimination.
+        /// dropped (confirmed rule). A first-round tie moves the day into the tie-breaker defense and
+        /// arms a revote restricted to the tied seats; a tie in the revote ends the day with no
+        /// elimination.
         /// </summary>
         public VotingPublicResult ResolveVoting()
         {
@@ -534,7 +549,8 @@ namespace MafiaGame.Application.Matches
                 revealedRole = _driver.RoleOf(resolution.EliminatedPlayer.Value);
             }
 
-            // A tie leaves the phase at Voting, so this restarts the clock for the revote round.
+            // A tie has just moved the phase to TieBreaker, so this starts the defense clock; any
+            // other outcome moves on to the next phase and arms that one instead.
             ArmTimer();
             return new VotingPublicResult(resolution.Outcome, eliminatedSeat, revealedRole, tiedSeats);
         }

@@ -54,6 +54,7 @@ namespace MafiaGame.Tests.EditMode
                 case PhaseAdvance.ContinueToDiscussion: authority.ContinueToDiscussion(); break;
                 case PhaseAdvance.BeginVoting: authority.BeginVoting(); break;
                 case PhaseAdvance.ResolveVoting: authority.ResolveVoting(); break;
+                case PhaseAdvance.BeginRevote: authority.BeginRevote(); break;
             }
         }
 
@@ -177,7 +178,7 @@ namespace MafiaGame.Tests.EditMode
         }
 
         [Test]
-        public void TiedVotingTimeout_RestartsTheClockForTheRevote()
+        public void TiedVotingTimeout_OpensTheDefenseThenRestartsTheClockForTheRevote()
         {
             (NetworkedMatchAuthority authority, IReadOnlyList<PrivateRoleInfo> payloads) = Start();
             Expire(authority); // role reveal
@@ -191,6 +192,14 @@ namespace MafiaGame.Tests.EditMode
                 .Where(seat => seat != citizens[0] && seat != citizens[1]).OrderBy(seat => seat).ToList();
             Assert.IsTrue(authority.SubmitVote(voters[0], citizens[0]).Accepted);
             Assert.IsTrue(authority.SubmitVote(voters[1], citizens[1]).Accepted);
+
+            Expire(authority);
+
+            Assert.AreEqual(MatchPhase.TieBreaker, authority.CurrentPhase);
+            Assert.IsTrue(authority.IsRevote);
+            Assert.AreEqual(
+                MatchTimings.TieBreakerSeconds, authority.RemainingSeconds, 0.001d,
+                "The tied players get their defense before anyone votes again.");
 
             Expire(authority);
 

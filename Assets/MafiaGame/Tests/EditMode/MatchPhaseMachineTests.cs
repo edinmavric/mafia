@@ -100,5 +100,22 @@ namespace MafiaGame.Tests.EditMode
             Assert.IsTrue(MatchPhaseMachine.CanTransition(MatchPhase.Night, MatchPhase.NightResolution));
             Assert.IsFalse(MatchPhaseMachine.CanTransition(MatchPhase.Night, MatchPhase.Voting));
         }
+
+        [Test]
+        public void TheTieBreakerSitsBetweenATiedVoteAndTheRevote()
+        {
+            Assert.IsTrue(MatchPhaseMachine.CanTransition(MatchPhase.Voting, MatchPhase.TieBreaker));
+            Assert.IsTrue(MatchPhaseMachine.CanTransition(MatchPhase.TieBreaker, MatchPhase.Voting));
+        }
+
+        [Test]
+        public void TheTieBreakerCannotSkipStraightToAResult()
+        {
+            // The defense settles nothing on its own: only a revote can eliminate or end the day.
+            Assert.IsFalse(
+                MatchPhaseMachine.CanTransition(MatchPhase.TieBreaker, MatchPhase.VotingResolution));
+            Assert.IsFalse(MatchPhaseMachine.CanTransition(MatchPhase.TieBreaker, MatchPhase.GameOver));
+            Assert.IsFalse(MatchPhaseMachine.CanTransition(MatchPhase.TieBreaker, MatchPhase.Night));
+        }
     }
 }

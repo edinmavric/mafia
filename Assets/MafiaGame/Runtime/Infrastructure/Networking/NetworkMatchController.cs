@@ -356,6 +356,7 @@ namespace MafiaGame.Infrastructure.Networking
                 case PhaseAdvance.ContinueToDiscussion: HostContinueToDiscussion(); break;
                 case PhaseAdvance.BeginVoting: HostBeginVoting(); break;
                 case PhaseAdvance.ResolveVoting: HostResolveVoting(); break;
+                case PhaseAdvance.BeginRevote: HostBeginRevote(); break;
             }
         }
 
@@ -596,8 +597,24 @@ namespace MafiaGame.Infrastructure.Networking
         }
 
         /// <summary>
-        /// Tallies the votes and broadcasts the public result. A tie keeps the match in the voting
-        /// phase and narrows the candidates to the tied seats, so the same button drives the revote.
+        /// Opens the revote once the tied players have had their defense. Nothing is re-broadcast:
+        /// the candidate mask was already narrowed to the tied seats when the tie was tallied.
+        /// </summary>
+        public void HostBeginRevote()
+        {
+            if (!IsServer || _authority.CurrentPhase != MatchPhase.TieBreaker)
+            {
+                return;
+            }
+
+            _authority.BeginRevote();
+            _votesCast.Value = 0;
+            PublishPhase(); // Voting (revote)
+        }
+
+        /// <summary>
+        /// Tallies the votes and broadcasts the public result. A tie moves the day into the
+        /// tie-breaker defense and narrows the candidates to the tied seats before the revote.
         /// </summary>
         public void HostResolveVoting()
         {
@@ -618,7 +635,7 @@ namespace MafiaGame.Infrastructure.Networking
                 result.RevealedRole.HasValue ? (int)result.RevealedRole.Value : 0,
                 ToArray(result.TiedSeats));
 
-            PublishPhase(); // Night, Voting (revote) or GameOver
+            PublishPhase(); // Night, TieBreaker or GameOver
         }
 
         // ----- Client intents (identity from the connection) -----

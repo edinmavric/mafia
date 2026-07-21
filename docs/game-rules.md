@@ -39,8 +39,8 @@ Updated by owner decision. When code and this file conflict, ask the owner.
   Consequence: a vote (or a night target) can be changed only until the **last** player acts, not
   until the host tallies — once the round is complete it resolves immediately.
 - Highest vote count is eliminated.
-- **Tie** for the highest → **one revote** restricted to the tied candidates; if still tied →
-  **no elimination** that day.
+- **Tie** for the highest → the tied players get a **30-second defense** (`TieBreaker` phase), then
+  **one revote** restricted to the tied candidates; if still tied → **no elimination** that day.
 
 ### Elimination reveal
 - Whether an eliminated player's role is publicly revealed is a **host setting chosen before
@@ -53,12 +53,20 @@ Updated by owner decision. When code and this file conflict, ask the owner.
 
 ## Deferred (recorded so nothing slips through)
 
-- **30-second "tie-breaker" defense window** (tied players give a last defense before the
-  revote): this is a timer/presentation concern. The domain must not use real time, so it is
-  NOT modeled in Milestone 1. It arrives with the authority/timer layer (Milestone 4). The
-  domain models the revote purely as a second scoped voting round.
-- **A dedicated `TieBreaker` phase** in `MatchPhase`: deferred to avoid churning the already
-  committed serialized enum; add it together with the timer/authority layer.
+- **30-second "tie-breaker" defense window** and the **`TieBreaker` phase**. **Status: DONE.**
+  A tied vote no longer flows straight into the revote: the day moves to `MatchPhase.TieBreaker`,
+  where the tied players get **30 seconds** (`MatchTimings.TieBreakerSeconds`) to defend themselves,
+  and only then does the revote open on those same candidates. The flow is
+  `Voting → TieBreaker → Voting`, enforced in `MatchPhaseMachine`; the defense cannot reach a result
+  on its own, so a tie can never skip the revote. Only the *first* tie of a day reaches it — a tie in
+  the revote ends the day with no elimination through `VotingResolution`, so the pair cannot loop.
+  The defense is talking time, not voting time: votes submitted during it are rejected as
+  `WrongPhase`, and the round starts with a clean tally.
+  The duration is a constant rather than a lobby setting, like the role-reveal and announcement
+  times: it is not replicated, so host and clients agree on it without another value on the wire.
+  `TieBreaker` is **appended** to the `MatchPhase` enum rather than inserted where it belongs in the
+  flow, because the numeric values are already replicated and shifting them would silently mean a
+  different phase to anything holding an older value.
 - **Phase-gating of commands** (an action is only legal in its correct phase): deferred to the
   Application/command layer (Milestone 4). Milestone 1 domain services are phase-agnostic and
   validate only the intrinsic rule (living target, correct actor, etc.).
@@ -75,8 +83,7 @@ The following are intentionally deferred and recorded here so they are not lost:
   and networked. Votes are seat-based intents validated server-side; a player may change their vote
   until the host tallies, and votes from disconnected seats are dropped. Public alive/dead status and
   the current vote candidates are replicated as bitmasks; no role data is broadcast.
-  Still deferred here: **phase timers** (the host advances every phase by hand) and the
-  **30-second tie-breaker defense window** (see the timer item above).
+  Still deferred here: **phase timers** (the host advances every phase by hand).
 - **Phase timers.** **Status: DONE (authority side).** Role reveal, night, day announcement,
   discussion, and voting each run on a deadline owned by the host. The authority counts down through
   `Tick(deltaSeconds)` — elapsed time is passed in as a number, so the rules stay engine-free and the
@@ -89,7 +96,7 @@ The following are intentionally deferred and recorded here so they are not lost:
   The host buttons remain as manual "skip this phase" controls.
   Defaults are in `MatchTimings.Default`: reveal 10 s, night 45 s, announcement 8 s, discussion 90 s,
   voting 45 s. The host can change night / discussion / voting in the lobby (see "Lobby settings").
-  Still deferred: the **30-second tie-breaker defense window**.
+  The tie-breaker defense runs on the same clock at a fixed 30 s (see the tie-breaker item above).
 - **Lobby settings.** **Status: DONE.** The host picks Mafia count, Doctor, Detective, role reveal,
   and the night / discussion / voting durations in the lobby; `MatchSetup` (engine-free, immutable)
   carries the choices and `MatchConfiguration` still decides whether they are legal. Options the

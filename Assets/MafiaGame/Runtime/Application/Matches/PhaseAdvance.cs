@@ -23,6 +23,9 @@ namespace MafiaGame.Application.Matches
         BeginVoting,
 
         /// <summary>Voting ran out: tally whatever votes were cast (abstention is allowed).</summary>
-        ResolveVoting
+        ResolveVoting,
+
+        /// <summary>The tied players' defense ran out: open the revote.</summary>
+        BeginRevote
     }
 }

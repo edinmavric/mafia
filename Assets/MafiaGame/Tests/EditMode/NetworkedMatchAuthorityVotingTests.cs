@@ -197,7 +197,7 @@ namespace MafiaGame.Tests.EditMode
         }
 
         [Test]
-        public void ResolveVoting_Tie_StaysInVotingAndArmsRevoteOnTiedSeats()
+        public void ResolveVoting_Tie_EntersTheTieBreakerAndArmsRevoteOnTiedSeats()
         {
             var (authority, payloads) = Start();
             ToVoting(authority);
@@ -213,9 +213,46 @@ namespace MafiaGame.Tests.EditMode
 
             Assert.AreEqual(VoteOutcome.TieRequiresRevote, result.Outcome);
             CollectionAssert.AreEquivalent(new[] { first, second }, result.TiedSeats);
-            Assert.AreEqual(MatchPhase.Voting, authority.CurrentPhase);
+            Assert.AreEqual(MatchPhase.TieBreaker, authority.CurrentPhase);
             Assert.IsTrue(authority.IsRevote);
             CollectionAssert.AreEquivalent(new[] { first, second }, authority.VoteCandidateSeats());
+        }
+
+        [Test]
+        public void SubmitVote_DuringTheTieBreakerDefense_IsRejected()
+        {
+            var (authority, payloads) = Start();
+            ToVoting(authority);
+            List<int> citizens = CitizenSeats(payloads);
+            List<int> voters = SeatsExcept(payloads, citizens[0], citizens[1]);
+            authority.SubmitVote(voters[0], citizens[0]);
+            authority.SubmitVote(voters[1], citizens[1]);
+            authority.ResolveVoting();
+
+            // The defense is talking time, not voting time: the revote has not opened yet.
+            IntentResult result = authority.SubmitVote(voters[0], citizens[0]);
+
+            Assert.IsFalse(result.Accepted);
+            Assert.AreEqual(IntentRejection.WrongPhase, result.Reason);
+        }
+
+        [Test]
+        public void BeginRevote_OpensVotingOnTheTiedSeatsOnly()
+        {
+            var (authority, payloads) = Start();
+            ToVoting(authority);
+            List<int> citizens = CitizenSeats(payloads);
+            List<int> voters = SeatsExcept(payloads, citizens[0], citizens[1]);
+            authority.SubmitVote(voters[0], citizens[0]);
+            authority.SubmitVote(voters[1], citizens[1]);
+            authority.ResolveVoting();
+
+            authority.BeginRevote();
+
+            Assert.AreEqual(MatchPhase.Voting, authority.CurrentPhase);
+            Assert.AreEqual(0, authority.SubmittedVoteCount, "The defense must not carry votes over.");
+            CollectionAssert.AreEquivalent(
+                new[] { citizens[0], citizens[1] }, authority.VoteCandidateSeats());
         }
 
         [Test]
@@ -228,6 +265,7 @@ namespace MafiaGame.Tests.EditMode
             authority.SubmitVote(voters[0], citizens[0]);
             authority.SubmitVote(voters[1], citizens[1]);
             authority.ResolveVoting();
+            authority.BeginRevote();
 
             // citizens[2] is alive but was not part of the tie.
             IntentResult result = authority.SubmitVote(voters[0], citizens[2]);
@@ -246,6 +284,7 @@ namespace MafiaGame.Tests.EditMode
             authority.SubmitVote(voters[0], citizens[0]);
             authority.SubmitVote(voters[1], citizens[1]);
             authority.ResolveVoting();
+            authority.BeginRevote();
 
             authority.SubmitVote(voters[0], citizens[0]);
             authority.SubmitVote(voters[1], citizens[1]);

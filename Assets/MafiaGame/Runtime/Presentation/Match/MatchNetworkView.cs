@@ -37,6 +37,7 @@ namespace MafiaGame.Presentation.Match
         private Button _discussButton;
         private Button _beginVoteButton;
         private Button _resolveVoteButton;
+        private Button _revoteButton;
         private Button _returnToLobbyButton;
         private Transform _nightRow;
 
@@ -324,7 +325,8 @@ namespace MafiaGame.Presentation.Match
                         seats.Add("mesto " + (seat + 1));
                     }
 
-                    _resultText.text = "Nerešeno (" + string.Join(", ", seats) + ") — ponovno glasanje.";
+                    _resultText.text = "Nerešeno (" + string.Join(", ", seats) +
+                                       ") — imaju poslednju reč, pa ide ponovno glasanje.";
                     break;
 
                 default:
@@ -332,7 +334,6 @@ namespace MafiaGame.Presentation.Match
                     break;
             }
 
-            // A revote keeps the phase at Voting, so the phase event does not fire — re-render here.
             Render();
         }
 
@@ -535,6 +536,7 @@ namespace MafiaGame.Presentation.Match
             _discussButton.gameObject.SetActive(host && phase == MatchPhase.DayAnnouncement);
             _beginVoteButton.gameObject.SetActive(host && phase == MatchPhase.DayDiscussion);
             _resolveVoteButton.gameObject.SetActive(host && phase == MatchPhase.Voting);
+            _revoteButton.gameObject.SetActive(host && phase == MatchPhase.TieBreaker);
             _returnToLobbyButton.gameObject.SetActive(host && phase == MatchPhase.GameOver);
         }
 
@@ -634,6 +636,7 @@ namespace MafiaGame.Presentation.Match
             MatchPhase.DayDiscussion => "Diskusija",
             MatchPhase.Voting => "Glasanje",
             MatchPhase.VotingResolution => "Razrešenje glasanja",
+            MatchPhase.TieBreaker => "Odbrana pred ponovno glasanje",
             MatchPhase.GameOver => "Kraj partije",
             _ => phase.ToString()
         };
@@ -697,6 +700,8 @@ namespace MafiaGame.Presentation.Match
             _beginVoteButton.onClick.AddListener(() => _controller?.HostBeginVoting());
             _resolveVoteButton = UiFactory.CreateButton(hostRow, "Prebroj glasove");
             _resolveVoteButton.onClick.AddListener(() => _controller?.HostResolveVoting());
+            _revoteButton = UiFactory.CreateButton(hostRow, "Preskoči → Ponovno glasanje");
+            _revoteButton.onClick.AddListener(() => _controller?.HostBeginRevote());
             _returnToLobbyButton = UiFactory.CreateButton(hostRow, "Nazad u lobi");
             _returnToLobbyButton.onClick.AddListener(() => _controller?.HostReturnToLobby());
 

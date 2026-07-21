@@ -15,6 +15,14 @@ namespace MafiaGame.Application.Matches
         /// <summary>Longest phase a host may configure (ten minutes), a sanity bound, not a rule.</summary>
         public const double MaxSeconds = 600d;
 
+        /// <summary>
+        /// How long the tied players get to defend themselves before the revote (confirmed rule:
+        /// 30 seconds). A constant rather than a configurable duration, like the role-reveal and
+        /// announcement times: it is not in the lobby UI and not replicated, so host and clients
+        /// always agree on it without another value on the wire.
+        /// </summary>
+        public const double TieBreakerSeconds = 30d;
+
         private MatchTimings(
             double roleRevealSeconds,
             double nightSeconds,
